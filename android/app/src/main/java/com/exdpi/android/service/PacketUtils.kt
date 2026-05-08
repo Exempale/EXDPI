@@ -1,7 +1,5 @@
 package com.exdpi.android.service
 
-import java.nio.ByteBuffer
-
 /**
  * Минимальный парсер IPv4/IPv6 + TCP. Считает контрольные суммы заново
  * после изменения payload (нужно для split TLS ClientHello).
@@ -71,56 +69,6 @@ object PacketUtils {
     fun isTcpPsh(flags: Int): Boolean = (flags and 0x08) != 0
     fun isTcpFin(flags: Int): Boolean = (flags and 0x01) != 0
     fun isTcpRst(flags: Int): Boolean = (flags and 0x04) != 0
-
-    /** Считает 16-битную one's complement сумму по чётному числу байт. */
-    private fun checksum16(buf: ByteBuffer, offset: Int, length: Int, initial: Long = 0L): Int {
-        var sum = initial
-        var i = 0
-        while (i + 1 < length) {
-            sum += ((buf.get(offset + i).toInt() and 0xFF) shl 8) or
-                (buf.get(offset + i + 1).toInt() and 0xFF)
-            i += 2
-        }
-        if (i < length) {
-            sum += (buf.get(offset + i).toInt() and 0xFF) shl 8
-        }
-        while (sum ushr 16 != 0L) {
-            sum = (sum and 0xFFFFL) + (sum ushr 16)
-        }
-        return (sum.inv().toInt() and 0xFFFF)
-    }
-
-    /** Пересчитать IPv4 + TCP контрольные суммы. */
-    fun recomputeIpv4AndTcpChecksums(packet: ByteArray, length: Int) {
-        // IPv4 header checksum
-        val ihl = ipv4HeaderLength(packet)
-        packet[10] = 0
-        packet[11] = 0
-        val ipBuf = ByteBuffer.wrap(packet, 0, length)
-        val ipSum = checksum16(ipBuf, 0, ihl)
-        packet[10] = ((ipSum ushr 8) and 0xFF).toByte()
-        packet[11] = (ipSum and 0xFF).toByte()
-
-        // TCP checksum (с псевдо-заголовком)
-        val tcpOffset = ihl
-        val tcpLength = length - tcpOffset
-        packet[tcpOffset + 16] = 0
-        packet[tcpOffset + 17] = 0
-
-        var pseudoSum = 0L
-        // src ip (4) + dst ip (4)
-        for (i in 12..19 step 2) {
-            pseudoSum += ((packet[i].toInt() and 0xFF) shl 8) or
-                (packet[i + 1].toInt() and 0xFF)
-        }
-        // protocol (TCP=6)
-        pseudoSum += 6L
-        pseudoSum += tcpLength.toLong()
-
-        val tcpSum = checksum16(ipBuf, tcpOffset, tcpLength, pseudoSum)
-        packet[tcpOffset + 16] = ((tcpSum ushr 8) and 0xFF).toByte()
-        packet[tcpOffset + 17] = (tcpSum and 0xFF).toByte()
-    }
 
     /** Возвращает true, если payload TCP похож на TLS ClientHello (версия + length). */
     fun looksLikeTlsClientHello(packet: ByteArray, payloadOffset: Int, payloadLength: Int): Boolean {

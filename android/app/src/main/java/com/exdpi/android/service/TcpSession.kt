@@ -31,6 +31,8 @@ class TcpSession(
     val tun: TunWriter,
     val protect: (Socket) -> Boolean,
     val strategy: Strategy,
+    /** Применять ли DPI-split на первом client-side payload. */
+    val applyBypass: Boolean = true,
 ) {
     enum class State { SYN_RECV, ESTABLISHED, FIN_WAIT, CLOSED }
 
@@ -133,11 +135,12 @@ class TcpSession(
         val s = socket ?: return
         try {
             val out = s.getOutputStream()
-            if (firstPayloadSent.compareAndSet(0, 1)) {
+            if (applyBypass && firstPayloadSent.compareAndSet(0, 1)) {
                 DpiBypassEngine.writeFirstClientPayload(
                     out, payload, payloadOffset, payloadLength, strategy,
                 )
             } else {
+                firstPayloadSent.set(1)
                 out.write(payload, payloadOffset, payloadLength)
                 out.flush()
             }

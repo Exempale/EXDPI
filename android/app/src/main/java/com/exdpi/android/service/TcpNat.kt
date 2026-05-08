@@ -51,19 +51,18 @@ class TcpNat(
 
         val key = TcpKey(srcIp, srcPort, dstIp, dstPort)
         val ports = portsProvider()
-        val isMatchingPort = ports.contains(dstPort)
+        val applyBypass = ports.contains(dstPort)
 
         val session = sessions.getOrPut(key) {
             if (!PacketUtils.isTcpSyn(flags)) {
                 Log.d(tag, "ignoring non-SYN for unknown flow ${key.shortId()} flags=$flags")
                 return
             }
-            // Если порт не в списке — пропускаем (создавать сессию = делать reset).
-            if (!isMatchingPort) {
-                // Пользователь не выбрал этот порт; не вмешиваемся в трафик.
-                return@getOrPut TcpSession(key, tunWriter, protect, strategyProvider())
-            }
-            TcpSession(key, tunWriter, protect, strategyProvider())
+            // Сессия создаётся всегда — пакет с tun не "пропустить дальше"
+            // невозможно, его обязательно нужно прорелеить. Но если порт не
+            // в списке, мы НЕ применяем DPI-split на первом payload — просто
+            // пишем как есть, не вмешиваясь.
+            TcpSession(key, tunWriter, protect, strategyProvider(), applyBypass)
         }
 
         bytesUp += payloadLength.toLong()

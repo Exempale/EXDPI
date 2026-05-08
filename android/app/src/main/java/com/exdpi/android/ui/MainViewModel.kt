@@ -5,11 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.exdpi.android.data.AppSettings
 import com.exdpi.android.data.SettingsRepository
-import com.exdpi.android.data.Strategy
 import com.exdpi.android.service.ExDpiVpnService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,24 +35,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.setEnabled(value) }
     }
 
-    fun setStrategy(s: Strategy) {
-        viewModelScope.launch { repo.setStrategy(s) }
-    }
-
     fun setApplyToAll(v: Boolean) {
         viewModelScope.launch { repo.setApplyToAll(v) }
     }
 
     fun setSelectedApps(apps: Set<String>) {
         viewModelScope.launch { repo.setSelectedApps(apps) }
-    }
-
-    fun setPort80(v: Boolean) {
-        viewModelScope.launch { repo.setPort80(v) }
-    }
-
-    fun setPort443(v: Boolean) {
-        viewModelScope.launch { repo.setPort443(v) }
     }
 
     fun setNeedsConsent(v: Boolean) {

@@ -51,13 +51,8 @@ class MainActivity : ComponentActivity() {
                     onMasterToggle = { wantOn ->
                         if (wantOn) requestVpnAndStart() else stopVpn()
                     },
-                    onStrategyChange = vm::setStrategy,
-                    onApplyToAllChange = vm::setApplyToAll,
-                    onSelectedAppsChange = vm::setSelectedApps,
-                    onPort80Change = vm::setPort80,
-                    onPort443Change = vm::setPort443,
-                    onPickApps = {
-                        startActivity(Intent(this, AppPickerActivity::class.java))
+                    onOpenSettings = {
+                        startActivity(Intent(this, SettingsActivity::class.java))
                     },
                 )
             }

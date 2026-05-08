@@ -11,8 +11,28 @@ android {
         applicationId = "com.exdpi.android"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+
+        externalNativeBuild {
+            ndkBuild {
+                arguments += listOf(
+                    "-j${Runtime.getRuntime().availableProcessors()}",
+                    "PKGNAME=com/exdpi/android/core",
+                    "CLSNAME=Tun2Socks",
+                )
+            }
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path = file("src/main/jni/Android.mk")
+        }
     }
 
     buildTypes {

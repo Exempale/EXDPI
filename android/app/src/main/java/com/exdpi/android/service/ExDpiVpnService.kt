@@ -15,31 +15,39 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.exdpi.android.R
+import com.exdpi.android.core.ByeDpiNative
+import com.exdpi.android.core.Tun2Socks
 import com.exdpi.android.data.AppSettings
 import com.exdpi.android.data.SettingsRepository
-import com.exdpi.android.data.Strategy
 import com.exdpi.android.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.File
+import java.net.ServerSocket
 
 /**
- * Главный VpnService.
+ * Главный VpnService — связка byedpi + hev-socks5-tunnel.
  *
- * При запуске:
- *   1. Читает текущие настройки.
- *   2. Создаёт tun-устройство (10.0.0.1/30, route 0.0.0.0/0).
- *   3. Если applyToAll == false — добавляет только выбранные приложения через
- *      addAllowedApplication(packageName).
- *   4. Поднимает [TcpNat] и читает IP-пакеты в цикле.
+ * Архитектура (как в ByeDPIAndroid / Zapret-Android):
+ *   1. Создаём tun-устройство через VpnService.Builder. Если у пользователя
+ *      выбран не «для всех» — указываем addAllowedApplication для каждой
+ *      выбранной упаковки. Иначе — addDisallowedApplication для самих себя
+ *      (чтобы не было петли).
+ *   2. Поднимаем встроенный SOCKS5-сервер byedpi на 127.0.0.1:port.
+ *      Он применяет TLS-десинк (split + disorder + tlsrec) к первому
+ *      пакету каждого соединения.
+ *   3. Поднимаем hev-socks5-tunnel: он читает IP-пакеты из tun fd, делает
+ *      их NAT'ом и пробрасывает все TCP/UDP-соединения в наш SOCKS5.
+ *   4. На стопе: глушим tun2socks, потом byedpi, потом закрываем tun.
+ *
+ * Никакого ручного TCP state-machine больше нет — tun2socks использует
+ * lwIP, который умеет нормальное окно/ретрансмит/SACK.
  */
 class ExDpiVpnService : VpnService() {
 
@@ -47,15 +55,20 @@ class ExDpiVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var tun: ParcelFileDescriptor? = null
-    private var nat: TcpNat? = null
-    private var pumpJob: Job? = null
-    private var settings: AppSettings = AppSettings()
+    private var configFile: File? = null
+    private var byedpiStarted = false
+    private var tun2socksStarted = false
 
     companion object {
         const val ACTION_START = "com.exdpi.android.action.START"
         const val ACTION_STOP = "com.exdpi.android.action.STOP"
         private const val NOTIF_ID = 11
         private const val CHANNEL_ID = "exdpi_vpn"
+
+        private const val TUN_ADDRESS_V4 = "198.18.0.1"
+        private const val TUN_ADDRESS_V6 = "fc00::1"
+        private const val TUN_MTU = 8500
+        private const val PROXY_HOST = "127.0.0.1"
 
         private val _state = MutableStateFlow(State.IDLE)
         val state: StateFlow<State> = _state
@@ -111,111 +124,149 @@ class ExDpiVpnService : VpnService() {
         scope.launch {
             try {
                 val repo = SettingsRepository(applicationContext)
-                settings = repo.settings.first()
-                val builder = Builder()
-                    .setSession(getString(R.string.app_name))
-                    .addAddress("10.0.0.1", 30)
-                    .addRoute("0.0.0.0", 0)
-                    .addDnsServer("1.1.1.1")
-                    .addDnsServer("8.8.8.8")
-                    .setMtu(1500)
-                    .setBlocking(true)
+                val settings = repo.settings.first()
 
-                if (!settings.applyToAll) {
-                    var added = 0
-                    for (pkg in settings.selectedApps) {
-                        try {
-                            builder.addAllowedApplication(pkg)
-                            added++
-                        } catch (_: PackageManager.NameNotFoundException) {
-                            // Приложение не установлено — пропускаем.
-                        }
-                    }
-                    if (added == 0) {
-                        // Чтобы не туннелировать вообще ничего и не убить весь интернет —
-                        // если выбранных приложений нет, возвращаемся.
-                        Log.w(tag, "No selected apps installed — VPN not started")
-                        _state.value = State.IDLE
-                        stopForegroundCompat()
-                        stopSelf()
-                        return@launch
-                    }
-                } else {
-                    // Исключаем сами себя из туннеля во избежание петли.
-                    try {
-                        builder.addDisallowedApplication(packageName)
-                    } catch (_: PackageManager.NameNotFoundException) {}
+                // 1) Свободный порт для byedpi на 127.0.0.1.
+                val proxyPort = findFreeLocalPort()
+
+                // 2) Поднимаем byedpi (SOCKS5 + DPI desync).
+                val rc = ByeDpiNative.nativeStart(
+                    ByeDpiNative.buildArgv(PROXY_HOST, proxyPort),
+                )
+                if (rc != 0) {
+                    throw IllegalStateException("byedpi start failed rc=$rc")
                 }
+                byedpiStarted = true
+                Log.i(tag, "byedpi started on $PROXY_HOST:$proxyPort")
 
-                val pfd = builder.establish() ?: run {
-                    Log.e(tag, "Builder.establish() returned null — нет согласия пользователя?")
-                    _state.value = State.IDLE
-                    stopForegroundCompat()
-                    stopSelf()
+                // 3) Tun-устройство.
+                val pfd = buildTun(settings) ?: run {
+                    Log.e(tag, "Builder.establish() returned null")
+                    onStartFailed()
                     return@launch
                 }
                 tun = pfd
 
-                val tunIn = FileInputStream(pfd.fileDescriptor)
-                val tunOut = FileOutputStream(pfd.fileDescriptor)
-                val writer = TunWriter(tunOut)
-                val tcpNat = TcpNat(
-                    tunWriter = writer,
-                    protect = { socket -> protect(socket) },
-                    strategyProvider = { settings.strategy },
-                    portsProvider = {
-                        val ports = mutableSetOf<Int>()
-                        if (settings.port443) ports += 443
-                        if (settings.port80) ports += 80
-                        if (ports.isEmpty()) ports += 443
-                        ports
-                    },
-                )
-                nat = tcpNat
-                _state.value = State.RUNNING
+                // 4) YAML-конфиг для hev-socks5-tunnel.
+                val cfg = writeTunnelConfig(proxyPort)
+                configFile = cfg
 
-                pumpJob = scope.launch {
-                    val buf = ByteArray(32768)
-                    try {
-                        while (true) {
-                            val n = tunIn.read(buf)
-                            if (n <= 0) break
-                            try {
-                                tcpNat.handlePacket(buf, n)
-                            } catch (t: Throwable) {
-                                Log.w(tag, "handlePacket failed: $t")
-                            }
-                        }
-                    } catch (_: Throwable) {
-                        // tun closed
-                    } finally {
-                        Log.i(tag, "tun pump exited")
-                    }
-                }
+                // 5) Запуск tun2socks.
+                Tun2Socks.TProxyStartService(cfg.absolutePath, pfd.fd)
+                tun2socksStarted = true
+                Log.i(tag, "tun2socks started, fd=${pfd.fd}")
+
+                _state.value = State.RUNNING
             } catch (t: Throwable) {
                 Log.e(tag, "VPN start failed", t)
-                _state.value = State.IDLE
-                stopForegroundCompat()
-                stopSelf()
+                onStartFailed()
             }
         }
+    }
+
+    private fun onStartFailed() {
+        cleanupRuntime()
+        _state.value = State.IDLE
+        stopForegroundCompat()
+        stopSelf()
+    }
+
+    private fun buildTun(settings: AppSettings): ParcelFileDescriptor? {
+        val builder = Builder()
+            .setSession(getString(R.string.app_name))
+            .setMtu(TUN_MTU)
+            .addAddress(TUN_ADDRESS_V4, 30)
+            .addAddress(TUN_ADDRESS_V6, 126)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
+            .addDnsServer("1.1.1.1")
+            .addDnsServer("8.8.8.8")
+            .setBlocking(false)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
+
+        if (!settings.applyToAll) {
+            var added = 0
+            for (pkg in settings.selectedApps) {
+                try {
+                    builder.addAllowedApplication(pkg)
+                    added++
+                } catch (_: PackageManager.NameNotFoundException) {
+                    // Приложение не установлено — пропускаем.
+                }
+            }
+            if (added == 0) {
+                // Если ни одно из выбранных приложений не установлено — не запускаем
+                // VPN, иначе мы бы захватили вообще весь трафик.
+                Log.w(tag, "No selected apps installed — VPN not started")
+                return null
+            }
+        } else {
+            // Исключаем сами себя, чтобы byedpi мог соединяться с интернетом.
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (_: PackageManager.NameNotFoundException) {}
+        }
+
+        return builder.establish()
+    }
+
+    private fun writeTunnelConfig(proxyPort: Int): File {
+        // hev-socks5-tunnel читает YAML с диска — сгенерим минимальный конфиг.
+        // tun-name = "tun0", tun уже создан VpnService — параметр не используется
+        // при работе через fd, оставляем для совместимости.
+        val yaml = """
+            tunnel:
+              name: tun0
+              mtu: $TUN_MTU
+              ipv4: $TUN_ADDRESS_V4
+              ipv6: '$TUN_ADDRESS_V6'
+            socks5:
+              port: $proxyPort
+              address: $PROXY_HOST
+              udp: 'udp'
+            misc:
+              log-level: warn
+              log-file: stderr
+              limit-nofile: 65535
+        """.trimIndent()
+        val dir = File(filesDir, "exdpi")
+        dir.mkdirs()
+        val file = File(dir, "tun2socks.yaml")
+        file.writeText(yaml)
+        return file
+    }
+
+    private fun findFreeLocalPort(): Int {
+        ServerSocket(0).use { return it.localPort }
     }
 
     private fun stopVpn() {
         if (_state.value == State.IDLE || _state.value == State.STOPPING) return
         _state.value = State.STOPPING
-        try {
-            pumpJob?.cancel()
-            nat?.closeAll()
-            tun?.close()
-        } catch (t: Throwable) {
-            Log.w(tag, "stopVpn cleanup error: $t")
-        } finally {
-            tun = null
-            nat = null
-            pumpJob = null
-            _state.value = State.IDLE
+        cleanupRuntime()
+        _state.value = State.IDLE
+    }
+
+    private fun cleanupRuntime() {
+        if (tun2socksStarted) {
+            try { Tun2Socks.TProxyStopService() } catch (t: Throwable) {
+                Log.w(tag, "TProxyStopService: $t")
+            }
+            tun2socksStarted = false
         }
+        if (byedpiStarted) {
+            try { ByeDpiNative.nativeStop() } catch (t: Throwable) {
+                Log.w(tag, "byedpi stop: $t")
+            }
+            byedpiStarted = false
+        }
+        try { tun?.close() } catch (_: Throwable) {}
+        tun = null
+        try { configFile?.delete() } catch (_: Throwable) {}
+        configFile = null
     }
 
     private fun startForegroundCompat() {
@@ -265,7 +316,4 @@ class ExDpiVpnService : VpnService() {
         ch.setShowBadge(false)
         nm.createNotificationChannel(ch)
     }
-
-    @Suppress("UNUSED")
-    private val unusedStrategyRef: Strategy = Strategy.CLIENTHELLO_SPLIT
 }

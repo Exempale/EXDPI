@@ -39,6 +39,12 @@
         </activity>
 
         <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings"
+            android:theme="@style/Theme.EXDPI" />
+
+        <activity
             android:name=".ui.AppPickerActivity"
             android:exported="false"
             android:label="@string/title_app_picker"

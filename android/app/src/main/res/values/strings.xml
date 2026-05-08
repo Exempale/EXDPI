@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EXDPI</string>
+    <string name="title_main">EXDPI</string>
+    <string name="title_app_picker">Приложения</string>
+    <string name="header_label">ОБХОД</string>
+    <string name="status_off">Отключено</string>
+    <string name="status_on">Включено</string>
+    <string name="status_starting">…</string>
+    <string name="status_error">Ошибка</string>
+    <string name="hint_no_connections">нет соединений</string>
+    <string name="hint_vpn_consent_required">требуется согласие на VPN</string>
+    <string name="settings">Настройки</string>
+    <string name="apps_selection">Приложения</string>
+    <string name="apps_selection_subtitle">Выберите, для каких приложений включать обход</string>
+    <string name="strategy_label">Стратегия</string>
+    <string name="strategy_clienthello_split">TLS ClientHello fragmentation</string>
+    <string name="strategy_ttl_decoy">TTL decoy + ClientHello split</string>
+    <string name="strategy_desync">Desync (split + TTL)</string>
+    <string name="apply_to_all">Применять ко всем приложениям</string>
+    <string name="apply_to_selected">Только выбранные приложения</string>
+    <string name="select_all">Выбрать все</string>
+    <string name="clear_all">Снять все</string>
+    <string name="search_apps">Поиск</string>
+    <string name="presets_label">Быстрые пресеты</string>
+    <string name="preset_telegram">Telegram</string>
+    <string name="preset_youtube">YouTube</string>
+    <string name="preset_discord">Discord</string>
+    <string name="footer_author">автор · Exempale</string>
+    <string name="footer_version">EXDPI Android v1.0</string>
+    <string name="notif_channel_name">EXDPI VPN</string>
+    <string name="notif_running_title">EXDPI · обход активен</string>
+    <string name="notif_running_text">Туннель запущен для выбранных приложений</string>
+    <string name="back">Назад</string>
+    <string name="general_section">Общее</string>
+    <string name="bypass_section">Обход блокировок</string>
+    <string name="ports_label">TCP-порты для обработки</string>
+    <string name="ports_hint">по умолчанию 443 (HTTPS) — там и работает большинство DPI</string>
+    <string name="port_80">80 (HTTP)</string>
+    <string name="port_443">443 (HTTPS)</string>
+</resources>

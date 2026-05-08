@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF0E1116</color>
+    <color name="bg_card">#FF161B22</color>
+    <color name="bg_card_hi">#FF1F2630</color>
+    <color name="border">#FF222831</color>
+    <color name="text_primary">#FFE6EDF3</color>
+    <color name="text_secondary">#FF8B949E</color>
+    <color name="text_muted">#FF6E7681</color>
+    <color name="accent">#FF22C55E</color>
+    <color name="accent_dim">#FF16A34A</color>
+    <color name="accent_dark">#FF14532D</color>
+    <color name="danger">#FFEF4444</color>
+    <color name="danger_dim">#FFB91C1C</color>
+    <color name="track_off">#FF30363D</color>
+    <color name="knob_off">#FF8B949E</color>
+    <color name="track_on">#FF22C55E</color>
+    <color name="knob_on">#FFE6EDF3</color>
+</resources>

@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+.cxx/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.kotlin/
+captures/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+gen/
+out/
+*.apk
+*.ap_
+*.dex

@@ -6,10 +6,12 @@ import threading
 import tkinter as tk
 from typing import Optional
 
-from . import __version__, paths
+from . import __version__, autostart, paths
 from .config import save as save_config
 from .controller import Controller
 from .theme import THEME
+from .tray import TrayController
+from .ui_dpitest import DpiTestDialog
 from .ui_settings import SettingsWindow
 from .updater import UpdateDialog, check_async, snooze_for_three_days
 from .widgets import AnimatedToggle, IconButton, StatusDot
@@ -31,6 +33,8 @@ class App(tk.Tk):
 
         self._error_text: Optional[str] = None
         self._after_jobs: list[str] = []
+        self._tray: Optional[TrayController] = None
+        self._quitting = False
 
         self.title("EXDPI")
         self.configure(bg=THEME.bg)
@@ -57,6 +61,22 @@ class App(tk.Tk):
         self._refresh_status_text()
         self._schedule_stats_refresh()
         self._schedule_update_check()
+
+        # синхронизируем реестр Windows с конфигом (на случай, если
+        # пользователь руками удалил запись или путь к exe изменился)
+        try:
+            autostart.apply(bool(self.ctl.cfg.get("autostart_with_windows", False)))
+        except Exception:
+            log.exception("autostart sync failed")
+
+        # tray-иконка: запускаем, если включено сворачивание в трей или
+        # запуск свёрнутым — иначе она просто не нужна
+        if self.ctl.cfg.get("minimize_to_tray", True) or self.ctl.cfg.get("start_minimized", False):
+            self._init_tray()
+
+        # запуск свёрнутым: окно прячется сразу, tray уже есть
+        if self.ctl.cfg.get("start_minimized", False) and self._tray is not None:
+            self.after(150, self.withdraw)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -149,6 +169,16 @@ class App(tk.Tk):
             font=(THEME.font_ui, 9),
         )
         self.hint_lbl.pack(pady=(6, 0))
+
+        # diagnostic link — открывает DPI-тест (TLS-handshake к набору хостов)
+        self.diag_lbl = tk.Label(
+            toggle_box, text="проверить обход",
+            fg=THEME.accent_dim, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "underline"),
+            cursor="hand2",
+        )
+        self.diag_lbl.pack(pady=(4, 0))
+        self.diag_lbl.bind("<Button-1>", lambda _e: self._open_dpitest())
 
         # ── footer ──────────────────────────────────────────────────
         footer = tk.Frame(outer, bg=THEME.bg)
@@ -273,11 +303,27 @@ class App(tk.Tk):
         def _on_save(new_cfg: dict) -> None:
             self.ctl.cfg.update(new_cfg)
             self.ctl.save()
+            # применяем автозапуск Windows к реестру
+            try:
+                autostart.apply(bool(new_cfg.get("autostart_with_windows", False)))
+            except Exception:
+                log.exception("autostart apply failed")
+            # tray: если включено сворачивание/старт-в-трей, а иконки ещё нет — поднять
+            want_tray = bool(new_cfg.get("minimize_to_tray", True)) or \
+                bool(new_cfg.get("start_minimized", False))
+            if want_tray and self._tray is None:
+                self._init_tray()
             if was_on:
                 self.ctl.restart_with_new_config()
             self._refresh_status_text()
 
         SettingsWindow(self, self.ctl.cfg, on_save=_on_save)
+
+    def _open_dpitest(self) -> None:
+        try:
+            DpiTestDialog(self)
+        except Exception:
+            log.exception("dpi test dialog failed")
 
     def _copy_link(self) -> None:
         cfg = self.ctl.cfg
@@ -299,14 +345,75 @@ class App(tk.Tk):
         self.hint_lbl.configure(text=text, fg=THEME.accent_dim)
         self.after(1500, lambda: self.hint_lbl.configure(text=prev, fg=prev_color))
 
-    def _on_close(self) -> None:
+    # ── tray ────────────────────────────────────────────────────────
+    def _init_tray(self) -> None:
+        if self._tray is not None:
+            return
+        try:
+            ico_png = paths.icon_png()
+        except Exception:
+            log.exception("icon path failed")
+            return
+        try:
+            tray = TrayController(
+                icon_path=ico_png,
+                on_show=lambda: self.after(0, self._show_from_tray),
+                on_toggle=lambda: self.after(0, self._on_toggle),
+                on_quit=lambda: self.after(0, self._quit_app),
+                is_on_provider=lambda: self.ctl.is_on(),
+            )
+            if not tray.start():
+                log.info("tray controller did not start")
+                return
+            self._tray = tray
+        except Exception:
+            log.exception("tray init failed")
+
+    def _show_from_tray(self) -> None:
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except Exception:
+            log.exception("show from tray failed")
+
+    def _quit_app(self) -> None:
+        """Действительно закрыть приложение (из меню трея или, если трея нет,
+        по крестику окна)."""
+        if self._quitting:
+            return
+        self._quitting = True
+        if self._tray is not None:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
+            self._tray = None
         try:
             self.ctl.stop()
         except Exception:
-            pass
+            log.exception("controller stop failed")
         for j in self._after_jobs:
             try:
                 self.after_cancel(j)
             except Exception:
                 pass
-        self.destroy()
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+    def _on_close(self) -> None:
+        # если включено сворачивание в трей и tray работает — прячем окно
+        if (
+            self._tray is not None
+            and bool(self.ctl.cfg.get("minimize_to_tray", True))
+            and not self._quitting
+        ):
+            try:
+                self.withdraw()
+            except Exception:
+                log.exception("withdraw failed")
+            return
+        # иначе — обычный полный выход
+        self._quit_app()

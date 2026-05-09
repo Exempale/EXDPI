@@ -518,6 +518,36 @@ class SettingsWindow(tk.Toplevel):
         )
         self._proxy_on.pack(fill="x", pady=(0, 8))
 
+        # ── разделитель ─────────────────────────────────────────────
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
+
+        # автозапуск с Windows
+        self._autostart = _CheckRow(
+            body, "Запускать с Windows",
+            "Добавить EXDPI в автозагрузку Windows (HKCU\\…\\Run). "
+            "Запись убирается, если выключить тумблер.",
+            bool(self.cfg.get("autostart_with_windows", False)),
+        )
+        self._autostart.pack(fill="x", pady=(0, 8))
+
+        # сворачивать в трей по крестику
+        self._tray = _CheckRow(
+            body, "Сворачивать в трей",
+            "По крестику окна программа уходит в трей вместо выхода. "
+            "Из трея — двойной клик или «Открыть EXDPI» в меню.",
+            bool(self.cfg.get("minimize_to_tray", True)),
+        )
+        self._tray.pack(fill="x", pady=(0, 8))
+
+        # запускать свёрнутым
+        self._start_min = _CheckRow(
+            body, "Запускать свёрнутым в трей",
+            "При старте программа сразу прячется в трей. Удобно вместе "
+            "с автозапуском, чтобы не мозолила глаза.",
+            bool(self.cfg.get("start_minimized", False)),
+        )
+        self._start_min.pack(fill="x", pady=(0, 8))
+
         # footer (жёстко приколочен к низу окна)
         footer = tk.Frame(outer, bg=THEME.bg)
         footer.pack(side="bottom", fill="x", pady=(10, 0))
@@ -588,6 +618,9 @@ class SettingsWindow(tk.Toplevel):
         out["zapret_enabled"] = self._zapret_on.get()
         out["proxy_enabled"] = self._proxy_on.get()
         out["custom_domains"] = self._domains.get()
+        out["autostart_with_windows"] = self._autostart.get()
+        out["minimize_to_tray"] = self._tray.get()
+        out["start_minimized"] = self._start_min.get()
 
         self.on_save(out)
         self.destroy()

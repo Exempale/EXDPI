@@ -31,23 +31,49 @@ def _default_secret() -> str:
 # Дефолтный набор доменов, которые часто блокируют у российских провайдеров,
 # но которых нет в стоковом list-general.txt zapret. ИИ-сайты в первую очередь.
 DEFAULT_CUSTOM_DOMAINS: List[str] = [
+    # OpenAI / ChatGPT
     "chatgpt.com",
     "openai.com",
     "oaistatic.com",
     "oaiusercontent.com",
+    "cdn.openai.com",
+    # Anthropic / Claude
     "claude.ai",
     "claude.com",
     "anthropic.com",
+    # Devin
     "app.devin.ai",
     "devin.ai",
+    # Perplexity
     "perplexity.ai",
+    "www.perplexity.ai",
+    # Google AI / Gemini
     "gemini.google.com",
-    "x.ai",
+    "aistudio.google.com",
+    # xAI / Grok — добавлены все основные субдомены, иначе grok.com
+    # часто не пускает: фронт грузится с CDN/asset-сабдоменов
     "grok.com",
+    "www.grok.com",
+    "x.ai",
+    "www.x.ai",
+    "api.x.ai",
+    "accounts.x.ai",
+    "assets.x.ai",
+    "cdn.x.ai",
+    # HuggingFace
     "huggingface.co",
+    "hf.co",
+    # MS Copilot
     "copilot.microsoft.com",
+    # Misc
     "you.com",
     "poe.com",
+    # CDN — без них браузер часто не может скачать ассеты ИИ-сайтов
+    # (app.devin.ai → CloudFront, grok.com → Cloudflare и т.п.)
+    "cloudfront.net",
+    "cloudflare.com",
+    "cdn.cloudflare.net",
+    "r2.cloudflarestorage.com",
 ]
 
 
@@ -125,6 +151,10 @@ DEFAULT: Dict[str, Any] = {
 
     # general
     "autostart_with_windows": False,
+    # сворачивать в трей по крестику окна (вместо выхода)
+    "minimize_to_tray": True,
+    # запускать программу свёрнутой (например, при автозапуске Windows)
+    "start_minimized": False,
 
     # авто-проверка обновлений: timestamp (sec since epoch), до которого
     # не показывать диалог (после клика «пропустить обновление» = +3 дня)

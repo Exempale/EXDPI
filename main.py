@@ -1,12 +1,4 @@
-"""Точка входа EXDPI.
-
-Объединённый GUI для:
-  • zapret-discord-youtube (winws.exe — DPI обход)
-  • tg-ws-proxy           (MTProto WebSocket-прокси Telegram)
-
-При запуске не от администратора — автоматически перезапускается
-от имени администратора через UAC (ShellExecuteW + runas).
-"""
+# пользуйтесь, тг автора(меня) - @Exempale
 from __future__ import annotations
 
 import ctypes

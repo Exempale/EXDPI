@@ -1,0 +1,279 @@
+# EXDPI · Социальные сети
+# Загрузить: настройки → «Свои домены» → «загрузить .txt»
+# Формат: один домен на строку, комментарии — после #
+
+# === Twitter / X ===
+twitter.com
+www.twitter.com
+x.com
+www.x.com
+mobile.twitter.com
+mobile.x.com
+t.co
+twimg.com
+abs.twimg.com
+abs-0.twimg.com
+pbs.twimg.com
+video.twimg.com
+ton.twimg.com
+api.twitter.com
+api.x.com
+
+# === Instagram ===
+instagram.com
+www.instagram.com
+i.instagram.com
+graph.instagram.com
+help.instagram.com
+business.instagram.com
+cdninstagram.com
+scontent.cdninstagram.com
+scontent-iad3-1.cdninstagram.com
+ig.me
+
+# === Facebook / Meta ===
+facebook.com
+www.facebook.com
+m.facebook.com
+mbasic.facebook.com
+fb.com
+fb.me
+fbcdn.net
+scontent.fbcdn.net
+static.fbcdn.net
+graph.facebook.com
+edge-mqtt.facebook.com
+mqtt.facebook.com
+api.facebook.com
+business.facebook.com
+developers.facebook.com
+messenger.com
+www.messenger.com
+
+# === Threads ===
+threads.net
+www.threads.net
+threads.com
+www.threads.com
+
+# === TikTok ===
+tiktok.com
+www.tiktok.com
+m.tiktok.com
+tiktokcdn.com
+tiktokv.com
+tiktokcdn-us.com
+tiktokcdn-eu.com
+musical.ly
+bytedance.com
+byteoversea.com
+ibyteimg.com
+tiktokcdn-eu.com
+p16-sign-va.tiktokcdn.com
+p16-sign-sg.tiktokcdn.com
+p16-sign.tiktokcdn-us.com
+
+# === LinkedIn ===
+linkedin.com
+www.linkedin.com
+licdn.com
+media.licdn.com
+static-exp1.licdn.com
+static-exp2.licdn.com
+static-exp3.licdn.com
+
+# === Pinterest ===
+pinterest.com
+www.pinterest.com
+pinterest.ru
+www.pinterest.ru
+pinimg.com
+i.pinimg.com
+s.pinimg.com
+
+# === Snapchat ===
+snapchat.com
+www.snapchat.com
+sc-cdn.net
+snap-cdn.net
+accounts.snapchat.com
+web.snapchat.com
+app.snapchat.com
+
+# === Reddit ===
+reddit.com
+www.reddit.com
+old.reddit.com
+new.reddit.com
+np.reddit.com
+i.redd.it
+v.redd.it
+preview.redd.it
+redditstatic.com
+redditmedia.com
+oauth.reddit.com
+gateway.reddit.com
+
+# === YouTube (соц-видео) ===
+youtube.com
+www.youtube.com
+m.youtube.com
+youtu.be
+youtubei.googleapis.com
+googlevideo.com
+ytimg.com
+i.ytimg.com
+yt3.ggpht.com
+yt4.ggpht.com
+www.youtube-nocookie.com
+
+# === Discord (соц-чат) ===
+discord.com
+discordapp.com
+discord.gg
+discord.media
+discordapp.net
+cdn.discordapp.com
+gateway.discord.gg
+media.discordapp.net
+
+# === Tumblr ===
+tumblr.com
+www.tumblr.com
+assets.tumblr.com
+static.tumblr.com
+media.tumblr.com
+
+# === Bluesky ===
+bsky.app
+bsky.social
+www.bsky.app
+api.bsky.social
+public.api.bsky.app
+cdn.bsky.app
+
+# === Mastodon (популярные инстансы) ===
+mastodon.social
+mastodon.online
+mas.to
+fosstodon.org
+mstdn.social
+mastodon.world
+
+# === Truth Social / Gab / Parler / альтернативы ===
+truthsocial.com
+www.truthsocial.com
+gab.com
+www.gab.com
+parler.com
+www.parler.com
+
+# === Quora ===
+quora.com
+www.quora.com
+ru.quora.com
+qsf.cf2.quoracdn.net
+
+# === Medium / блоги ===
+medium.com
+www.medium.com
+miro.medium.com
+cdn-images-1.medium.com
+hackernoon.com
+www.hackernoon.com
+substack.com
+www.substack.com
+
+# === Tinder / Bumble / знакомства ===
+tinder.com
+www.tinder.com
+gotinder.com
+api.gotinder.com
+bumble.com
+www.bumble.com
+hinge.co
+www.hinge.co
+okcupid.com
+www.okcupid.com
+
+# === Twitch (соц-стриминг) ===
+twitch.tv
+www.twitch.tv
+m.twitch.tv
+static.twitchcdn.net
+ttvnw.net
+jtvnw.net
+
+# === Soundcloud ===
+spotify.com
+
+# === Soundcloud ===
+soundcloud.com
+www.soundcloud.com
+api.soundcloud.com
+api-v2.soundcloud.com
+sndcdn.com
+i1.sndcdn.com
+a-v2.sndcdn.com
+
+# === Vimeo ===
+vimeo.com
+www.vimeo.com
+player.vimeo.com
+i.vimeocdn.com
+f.vimeocdn.com
+
+# === Flickr / 500px / фото ===
+flickr.com
+www.flickr.com
+staticflickr.com
+500px.com
+www.500px.com
+
+# === Patreon / Boosty / поддержка авторов ===
+patreon.com
+www.patreon.com
+c10.patreonusercontent.com
+boosty.to
+www.boosty.to
+buymeacoffee.com
+ko-fi.com
+www.ko-fi.com
+
+# === Behance / Dribbble ===
+behance.net
+www.behance.net
+dribbble.com
+www.dribbble.com
+cdn.dribbble.com
+
+# === DeviantArt ===
+deviantart.com
+www.deviantart.com
+da-files.com
+wixmp.com
+
+# === Mailing / Notion / комьюнити ===
+notion.so
+www.notion.so
+notion.site
+discord.gg
+
+# === Прочие крупные соц-платформы ===
+9gag.com
+www.9gag.com
+imgur.com
+www.imgur.com
+i.imgur.com
+
+# === CDN, на которых висит контент соц-сетей ===
+cloudfront.net
+cloudflare.com
+fastly.net
+akamaihd.net
+akamaized.net
+cdn.jsdelivr.net
+unpkg.com
+googleusercontent.com
+gstatic.com
+googleapis.com

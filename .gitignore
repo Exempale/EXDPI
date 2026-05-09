@@ -1,0 +1,23 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# pyinstaller
+build/
+dist/
+*.spec.bak
+
+# editor / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# logs / crash dumps
+*.log
+EXDPI-crash.log
+DpiBypass-crash.log

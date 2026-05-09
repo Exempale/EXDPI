@@ -1,0 +1,5 @@
+__version__ = "1.3.0"
+APP_NAME = "EXDPI"
+APP_INTERNAL_NAME = "EXDPI"
+GITHUB_REPO = "Exempale/EXDPI"
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"

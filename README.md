@@ -6,8 +6,6 @@
 * **[zapret-discord-youtube]** — обход DPI через WinDivert (`winws.exe`) для Discord, YouTube и пр.
 * **[tg-ws-proxy]** — локальный MTProto-прокси для Telegram, который ходит к DC через WebSocket.
 
-![preview](resources/icon.png)
-
 ![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&logo=github&label=Скачивания&color=brightgreen)
 
 ---

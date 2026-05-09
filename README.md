@@ -6,13 +6,15 @@
 * **[zapret-discord-youtube]** — обход DPI через WinDivert (`winws.exe`) для Discord, YouTube и пр.
 * **[tg-ws-proxy]** — локальный MTProto-прокси для Telegram, который ходит к DC через WebSocket.
 
+Один большой переключатель, иконка шестерёнки, тёмная тема. Без логов в окне, без лишних кнопок.
+
 ![preview](resources/icon.png)
 
 ---
 
 ## Запуск (готовый .exe)
 
-1. Скачайте `EXDPI.exe` из раздела releases.
+1. Скачайте `EXDPI.exe`.
 2. Запустите. Программа сама запросит права администратора (UAC) — это нужно
    для драйвера WinDivert, который ловит пакеты на сетевом уровне.
 3. Щёлкните по большому переключателю — оба сервиса (zapret + локальный
@@ -27,8 +29,9 @@
 
 ### Системные требования
 
-* Windows 10 или Windows 11, x64.
+* Windows 10 (1809+) или Windows 11, x64.
 * Права администратора (UAC) — для загрузки драйвера WinDivert.
+* Telegram Desktop — для использования встроенного MTProto-прокси.
 
 ---
 
@@ -82,6 +85,15 @@ EXDPI/
 для одного клиента более чем достаточно). Если сети нет — диалог просто
 не показывается.
 
+Чтобы выпустить новую версию:
+
+1. Поднять `__version__` в `app/__init__.py` (и `filevers`/`prodvers`
+   в `version_info.txt`).
+2. Пересобрать `EXDPI.exe`.
+3. На GitHub создать релиз с тегом `vX.Y.Z` (или `X.Y.Z`) и приложить .exe
+   как ассет.
+4. Все запущенные клиенты при следующем старте увидят уведомление.
+
 ---
 
 ## Сборка из исходников
@@ -112,6 +124,7 @@ pyinstaller --noconfirm --clean build.spec
   Бинарь `winws.exe`, драйвер WinDivert и `general*.bat` стратегии взяты
   из оригинального релиза без изменений.
 * tg-ws-proxy — оригинальный код в `proxy/`, не модифицирован.
+* Иконка — предоставлена пользователем.
 
 [zapret-discord-youtube]: https://github.com/Flowseal/zapret-discord-youtube
 [tg-ws-proxy]: https://github.com/tg-ws-proxy/tg-ws-proxy

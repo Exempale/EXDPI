@@ -377,18 +377,20 @@ class _CheckRow(tk.Frame):
 class SettingsWindow(tk.Toplevel):
     """Скользящее окно настроек поверх основного."""
 
-    WIDTH = 420
-    HEIGHT = 720
+    WIDTH = 440
+    HEIGHT = 640
 
     def __init__(self, master: tk.Tk, cfg: Dict[str, Any], on_save: Callable[[Dict[str, Any]], None]) -> None:
         super().__init__(master)
         self.cfg = dict(cfg)
         self.on_save = on_save
+        # mousewheel binding tag, чтобы корректно отвязать на close
+        self._wheel_bind: Optional[str] = None
 
         self.title("EXDPI · настройки")
         self.configure(bg=THEME.bg)
         self.resizable(True, True)
-        self.minsize(420, 700)
+        self.minsize(420, 460)
         self.transient(master)
         self.grab_set()
 
@@ -401,15 +403,14 @@ class SettingsWindow(tk.Toplevel):
 
         self._build()
 
-        # размер по контенту, центрируем относительно master
+        # размер окна — фиксированный «удобный», но не выше экрана.
+        # Содержимое всё равно скроллится, кнопки сохранить/отмена и кредит
+        # прибиты к низу — поэтому на любом разрешении они видны.
         self.update_idletasks()
-        req_w = max(self.WIDTH, self.winfo_reqwidth())
-        req_h = max(self.HEIGHT, self.winfo_reqheight())
         screen_h = self.winfo_screenheight()
         screen_w = self.winfo_screenwidth()
-        # не выше экрана
-        req_h = min(req_h, screen_h - 80)
-        req_w = min(req_w, screen_w - 40)
+        req_w = self.WIDTH
+        req_h = min(self.HEIGHT, max(460, screen_h - 120))
 
         mx = master.winfo_rootx()
         my = master.winfo_rooty()
@@ -417,18 +418,19 @@ class SettingsWindow(tk.Toplevel):
         mh = master.winfo_height()
         x = mx + (mw - req_w) // 2
         y = my + (mh - req_h) // 2
-        # держим в пределах экрана
         x = max(10, min(x, screen_w - req_w - 10))
         y = max(10, min(y, screen_h - req_h - 60))
         self.geometry(f"{req_w}x{req_h}+{x}+{y}")
 
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+
     def _build(self) -> None:
-        outer = tk.Frame(self, bg=THEME.bg, padx=22, pady=20)
+        outer = tk.Frame(self, bg=THEME.bg)
         outer.pack(fill="both", expand=True)
 
-        # header
-        header = tk.Frame(outer, bg=THEME.bg)
-        header.pack(fill="x")
+        # ── header (зафиксирован сверху) ────────────────────────────
+        header = tk.Frame(outer, bg=THEME.bg, padx=22, pady=20)
+        header.pack(side="top", fill="x")
         IconButton(
             header, glyph="back", size=24,
             on_click=self._cancel, tooltip="Назад",
@@ -448,9 +450,102 @@ class SettingsWindow(tk.Toplevel):
             anchor="w",
         ).pack(anchor="w")
 
-        # Tabs / sections — у нас всё компактно, без вкладок
-        body = tk.Frame(outer, bg=THEME.bg)
-        body.pack(fill="both", expand=True, pady=(20, 0))
+        # ── footer (зафиксирован снизу: кнопки + кредит) ───────────
+        footer = tk.Frame(outer, bg=THEME.bg, padx=22, pady=14)
+        footer.pack(side="bottom", fill="x")
+        # тонкая разделительная линия над футером
+        tk.Frame(outer, bg=THEME.border, height=1).pack(side="bottom", fill="x")
+
+        buttons = tk.Frame(footer, bg=THEME.bg)
+        buttons.pack(side="bottom", fill="x", pady=(8, 0))
+        credit = tk.Frame(footer, bg=THEME.bg)
+        credit.pack(side="bottom", fill="x")
+        tk.Label(
+            credit, text="автор · Exempale",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "bold"),
+        ).pack(anchor="center")
+        tk.Label(
+            credit,
+            text="сборка поверх zapret-discord-youtube и tg-ws-proxy",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8),
+        ).pack(anchor="center", pady=(2, 0))
+        tk.Label(
+            credit,
+            text="ориг. авторы: Flowseal / bol-van · tg-ws-proxy",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8),
+        ).pack(anchor="center")
+
+        cancel = tk.Label(
+            buttons, text="отмена",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 10), cursor="hand2",
+        )
+        cancel.pack(side="left", padx=(2, 0))
+        cancel.bind("<Button-1>", lambda _e: self._cancel())
+
+        save = tk.Label(
+            buttons, text="  сохранить  ",
+            fg=THEME.bg, bg=THEME.accent,
+            font=(THEME.font_ui, 10, "bold"),
+            cursor="hand2", padx=18, pady=8,
+        )
+        save.pack(side="right")
+        save.bind("<Button-1>", lambda _e: self._save())
+        save.bind("<Enter>", lambda _e: save.configure(bg=THEME.accent_dim))
+        save.bind("<Leave>", lambda _e: save.configure(bg=THEME.accent))
+
+        # ── скроллируемое тело (между header и footer) ─────────────
+        mid = tk.Frame(outer, bg=THEME.bg)
+        mid.pack(side="top", fill="both", expand=True)
+
+        canvas = tk.Canvas(
+            mid, bg=THEME.bg, highlightthickness=0, bd=0,
+        )
+        canvas.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(mid, orient="vertical", command=canvas.yview)
+        sb.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=sb.set)
+
+        body = tk.Frame(canvas, bg=THEME.bg, padx=22, pady=4)
+        body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        def _on_body_configure(_e: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(e: tk.Event) -> None:
+            canvas.itemconfigure(body_id, width=e.width)
+
+        body.bind("<Configure>", _on_body_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # колесо мыши: скроллим, только пока курсор над диалогом
+        def _on_wheel(e: tk.Event) -> None:
+            try:
+                delta = int(-1 * (e.delta / 120))
+            except Exception:
+                delta = -1 if getattr(e, "num", 0) == 4 else 1
+            canvas.yview_scroll(delta, "units")
+
+        def _bind_wheel(_e: tk.Event) -> None:
+            self._wheel_bind = canvas.bind_all("<MouseWheel>", _on_wheel)
+            canvas.bind_all("<Button-4>", _on_wheel)
+            canvas.bind_all("<Button-5>", _on_wheel)
+
+        def _unbind_wheel(_e: tk.Event) -> None:
+            try:
+                canvas.unbind_all("<MouseWheel>")
+                canvas.unbind_all("<Button-4>")
+                canvas.unbind_all("<Button-5>")
+            except Exception:
+                pass
+
+        self.bind("<Enter>", _bind_wheel)
+        self.bind("<Leave>", _unbind_wheel)
+        # на закрытии — снять привязку
+        self.bind("<Destroy>", lambda _e: _unbind_wheel(_e))
 
         # zapret strategy
         self._strategy = _Select(
@@ -548,53 +643,9 @@ class SettingsWindow(tk.Toplevel):
         )
         self._start_min.pack(fill="x", pady=(0, 8))
 
-        # footer (жёстко приколочен к низу окна)
-        footer = tk.Frame(outer, bg=THEME.bg)
-        footer.pack(side="bottom", fill="x", pady=(10, 0))
-
-        # кнопки — в самый низ, чтобы их было видно всегда
-        buttons = tk.Frame(footer, bg=THEME.bg)
-        buttons.pack(side="bottom", fill="x", pady=(8, 0))
-
-        # кредит над кнопками
-        credit = tk.Frame(footer, bg=THEME.bg)
-        credit.pack(side="bottom", fill="x")
-        tk.Label(
-            credit, text="автор · Exempale",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 9, "bold"),
-        ).pack(anchor="center")
-        tk.Label(
-            credit,
-            text="сборка поверх zapret-discord-youtube и tg-ws-proxy",
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8),
-        ).pack(anchor="center", pady=(2, 0))
-        tk.Label(
-            credit,
-            text="ориг. авторы: Flowseal / bol-van · tg-ws-proxy",
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8),
-        ).pack(anchor="center", pady=(0, 0))
-
-        cancel = tk.Label(
-            buttons, text="отмена",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 10), cursor="hand2",
-        )
-        cancel.pack(side="left", padx=(2, 0))
-        cancel.bind("<Button-1>", lambda _e: self._cancel())
-
-        save = tk.Label(
-            buttons, text="  сохранить  ",
-            fg=THEME.bg, bg=THEME.accent,
-            font=(THEME.font_ui, 10, "bold"),
-            cursor="hand2", padx=18, pady=8,
-        )
-        save.pack(side="right")
-        save.bind("<Button-1>", lambda _e: self._save())
-        save.bind("<Enter>", lambda _e: save.configure(bg=THEME.accent_dim))
-        save.bind("<Leave>", lambda _e: save.configure(bg=THEME.accent))
+        # небольшой отступ снизу скролла, чтобы последний пункт не липал
+        # к разделителю над футером
+        tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
 
     # actions
     def _regen_secret(self) -> None:

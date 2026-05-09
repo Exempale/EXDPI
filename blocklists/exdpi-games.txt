@@ -1,0 +1,260 @@
+# EXDPI · Игры
+# Загрузить: настройки → «Свои домены» → «загрузить .txt»
+# Формат: один домен на строку, комментарии — после #
+
+# === Discord (голос/чат в играх) ===
+discord.com
+discordapp.com
+discord.gg
+discord.media
+discordapp.net
+cdn.discordapp.com
+gateway.discord.gg
+media.discordapp.net
+
+# === Steam / Valve ===
+steampowered.com
+store.steampowered.com
+api.steampowered.com
+steamcommunity.com
+steamcontent.com
+steamstatic.com
+cdn.akamai.steamstatic.com
+steamuserimages-a.akamaihd.net
+steam-chat.com
+valvesoftware.com
+www.valvesoftware.com
+csgo.com
+counter-strike.net
+dota2.com
+www.dota2.com
+
+# === Epic Games ===
+epicgames.com
+www.epicgames.com
+unrealengine.com
+fortnite.com
+www.fortnite.com
+egstatic.com
+helpshift.com
+ol.epicgames.com
+launcher-public-service-prod06.ol.epicgames.com
+
+# === Battle.net / Blizzard ===
+battle.net
+www.battle.net
+us.battle.net
+eu.battle.net
+blizzard.com
+www.blizzard.com
+us.shop.battle.net
+worldofwarcraft.com
+overwatch.com
+hearthstone.com
+diablo3.com
+diablo4.com
+diabloimmortal.com
+playoverwatch.com
+playhearthstone.com
+playdiablo4.com
+
+# === Riot Games ===
+riotgames.com
+www.riotgames.com
+leagueoflegends.com
+www.leagueoflegends.com
+playvalorant.com
+valorantesports.com
+universe.leagueoflegends.com
+ddragon.leagueoflegends.com
+lolesports.com
+playruneterra.com
+2xko.com
+account.riotgames.com
+auth.riotgames.com
+
+# === EA / Origin ===
+ea.com
+www.ea.com
+origin.com
+www.origin.com
+electronicarts.com
+ea.gamespy.com
+playfifa.com
+fifa.com
+apexlegends.com
+www.apexlegends.com
+respawn.com
+help.ea.com
+answers.ea.com
+nucleus.ea.com
+accounts.ea.com
+
+# === Ubisoft ===
+ubisoft.com
+www.ubisoft.com
+ubi.com
+ubisoftconnect.com
+www.ubisoftconnect.com
+account.ubisoft.com
+store.ubi.com
+forums.ubisoft.com
+support.ubisoft.com
+
+# === Rockstar Games ===
+rockstargames.com
+www.rockstargames.com
+rsg.sc
+socialclub.rockstargames.com
+gtaonline.com
+gta.com
+reddead.com
+rdr2.com
+
+# === Activision / Call of Duty ===
+activision.com
+www.activision.com
+callofduty.com
+www.callofduty.com
+profile.callofduty.com
+treyarch.com
+infinityward.com
+sledgehammergames.com
+
+# === GOG / Larian / др. PC-стора ===
+gog.com
+www.gog.com
+gog-statics.com
+larian.com
+baldursgate3.game
+fanatical.com
+www.fanatical.com
+greenmangaming.com
+www.greenmangaming.com
+itch.io
+www.itch.io
+img.itch.zone
+
+# === Roblox ===
+roblox.com
+www.roblox.com
+rbxcdn.com
+robloxlabs.com
+roblox-cdn.com
+
+# === Minecraft / Mojang ===
+minecraft.net
+www.minecraft.net
+mojang.com
+api.mojang.com
+piston-meta.mojang.com
+piston-data.mojang.com
+launchermeta.mojang.com
+launcher.mojang.com
+authserver.mojang.com
+sessionserver.mojang.com
+education.minecraft.net
+hypixel.net
+
+# === GeForce / NVIDIA / AMD / Intel (драйверы и сервисы) ===
+nvidia.com
+www.nvidia.com
+download.nvidia.com
+geforce.com
+geforcenow.com
+play.geforcenow.com
+amd.com
+www.amd.com
+drivers.amd.com
+intel.com
+www.intel.com
+downloadcenter.intel.com
+
+# === Стриминг игр / захват ===
+twitch.tv
+www.twitch.tv
+static.twitchcdn.net
+ttvnw.net
+jtvnw.net
+youtube.com
+www.youtube.com
+m.youtube.com
+youtu.be
+googlevideo.com
+ytimg.com
+i.ytimg.com
+yt3.ggpht.com
+
+obsproject.com
+www.obsproject.com
+streamlabs.com
+www.streamlabs.com
+
+# === Игровые сервисы / античиты / стора ===
+playstation.com
+www.playstation.com
+store.playstation.com
+xbox.com
+www.xbox.com
+xboxlive.com
+xbox.live
+nintendo.com
+www.nintendo.com
+
+# === Античиты / службы ===
+easyanticheat.net
+www.easyanticheat.net
+battleye.com
+www.battleye.com
+
+# === GeoServer / маршруты / лаунчеры (CDN) ===
+akamaihd.net
+akamaized.net
+cloudfront.net
+fastly.net
+edgecast.com
+gccdn.net
+
+# === Прочие популярные ===
+gamebanana.com
+www.gamebanana.com
+nexusmods.com
+www.nexusmods.com
+modrinth.com
+curseforge.com
+www.curseforge.com
+mediafire.com
+www.mediafire.com
+
+# === Игровые комьюнити / форумы ===
+reddit.com
+www.reddit.com
+old.reddit.com
+i.redd.it
+redditmedia.com
+
+# === FACEIT / ESEA / турниры ===
+faceit.com
+www.faceit.com
+esea.net
+www.esea.net
+esl-play.com
+www.esl-play.com
+esl.gg
+hltv.org
+www.hltv.org
+liquipedia.net
+
+# === GitHub (моды/исходники) ===
+github.com
+www.github.com
+raw.githubusercontent.com
+codeload.github.com
+objects.githubusercontent.com
+api.github.com
+
+# === Discord-CDN-альты / голос ===
+voice.discord.media
+russia6049.discord.media
+brazil2649.discord.media
+us-west2649.discord.media

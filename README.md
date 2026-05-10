@@ -29,7 +29,6 @@
 
 * Windows 10 (1809+) или Windows 11, x64.
 * Права администратора (UAC) — для загрузки драйвера WinDivert.
-* Telegram Desktop — для использования встроенного MTProto-прокси.
 
 ---
 
@@ -96,7 +95,6 @@ pyinstaller --noconfirm --clean build.spec
   Бинарь `winws.exe`, драйвер WinDivert и `general*.bat` стратегии взяты
   из оригинального релиза без изменений.
 * tg-ws-proxy — оригинальный код в `proxy/`, не модифицирован.
-* Иконка — предоставлена пользователем.
 
 [zapret-discord-youtube]: https://github.com/Flowseal/zapret-discord-youtube
 [tg-ws-proxy]: https://github.com/tg-ws-proxy/tg-ws-proxy

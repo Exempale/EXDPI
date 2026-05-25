@@ -298,6 +298,8 @@ class IconButton(tk.Canvas):
             self._draw_back(s, color)
         elif self._glyph == "check":
             self._draw_check(s, color)
+        elif self._glyph == "theme":
+            self._draw_theme(s, color)
         else:
             self.create_text(s // 2, s // 2, text=self._glyph,
                              fill=color, font=(THEME.font_ui, int(s * 0.55)))
@@ -368,6 +370,23 @@ class IconButton(tk.Canvas):
                          capstyle="round")
         self.create_line(s * 0.45, s - pad, s - pad, pad, fill=color, width=2,
                          capstyle="round")
+
+    def _draw_theme(self, s: int, color: str) -> None:
+        """Иконка-«полумесяц/солнце» — переключение темы.
+
+        Полный круг закрашен текущим цветом, второй круг того же фона
+        накладывается со сдвигом — получается полумесяц.
+        """
+        bg = str(self.cget("bg"))
+        pad = s * 0.22
+        self.create_oval(pad, pad, s - pad, s - pad, fill=color, outline="")
+        # вырезаем «другой круг» цветом фона — получается полумесяц
+        cut = s * 0.18
+        self.create_oval(
+            pad + cut * 0.4, pad - cut * 0.2,
+            s - pad + cut * 0.6, s - pad - cut * 0.2,
+            fill=bg, outline="",
+        )
 
     @staticmethod
     def _rect(canvas: tk.Canvas, x1, y1, x2, y2, r=4, **kw) -> None:

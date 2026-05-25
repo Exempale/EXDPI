@@ -9,10 +9,11 @@ from typing import Optional
 from . import __version__, autostart, paths
 from .config import save as save_config
 from .controller import Controller
-from .theme import THEME
+from .theme import THEME, apply_theme, available_themes
 from .tray import TrayController
 from .ui_dpitest import DpiTestDialog
 from .ui_settings import SettingsWindow
+from .ui_tg_guide import TgVcGuideDialog
 from .updater import UpdateDialog, check_async, snooze_for_three_days
 from .widgets import AnimatedToggle, IconButton, StatusDot
 
@@ -96,11 +97,16 @@ class App(tk.Tk):
         header = tk.Frame(outer, bg=THEME.bg)
         header.pack(fill="x")
 
-        # шестерёнка справа — пакуем ПЕРВОЙ, чтобы гарантированно влезала
+        # иконки справа — пакуем ПЕРВЫМИ, чтобы гарантированно влезали
         # в строку, даже если заголовок слева разрастётся.
         IconButton(
             header, glyph="gear", size=30,
             on_click=self._open_settings, tooltip="Настройки",
+        ).pack(side="right", padx=(8, 0), pady=(2, 0))
+        IconButton(
+            header, glyph="theme", size=30,
+            on_click=self._cycle_theme,
+            tooltip="Переключить тему",
         ).pack(side="right", padx=(8, 0), pady=(2, 0))
 
         head_left = tk.Frame(header, bg=THEME.bg)
@@ -180,6 +186,24 @@ class App(tk.Tk):
         self.diag_lbl.pack(pady=(4, 0))
         self.diag_lbl.bind("<Button-1>", lambda _e: self._open_dpitest())
 
+        # ссылка на справку по Telegram VC прокси
+        self.tg_lbl = tk.Label(
+            toggle_box, text="подключить прокси в Telegram",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "underline"),
+            cursor="hand2",
+        )
+        self.tg_lbl.pack(pady=(2, 0))
+        self.tg_lbl.bind("<Button-1>", lambda _e: self._open_tg_guide())
+
+        # подпись с текущим режимом zapret — обычный/гейминг
+        self.mode_lbl = tk.Label(
+            toggle_box, text="",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"),
+        )
+        self.mode_lbl.pack(pady=(6, 0))
+
         # ── footer ──────────────────────────────────────────────────
         footer = tk.Frame(outer, bg=THEME.bg)
         footer.pack(side="bottom", fill="x", pady=(8, 0))
@@ -201,6 +225,13 @@ class App(tk.Tk):
         host = cfg.get("proxy_host", "127.0.0.1")
         port = cfg.get("proxy_port", 1443)
         self.info_lbl.configure(text=f"mtproto · {host}:{port}")
+
+        mode = str(cfg.get("game_mode", "normal"))
+        mode_text = "режим: гейминг (высокие порты)" if mode == "gaming" else "режим: обычный"
+        try:
+            self.mode_lbl.configure(text=mode_text)
+        except Exception:
+            pass
 
         is_on = self.ctl.is_on()
         self.toggle.set(is_on, animate=False)
@@ -299,6 +330,8 @@ class App(tk.Tk):
 
     def _open_settings(self) -> None:
         was_on = self.ctl.is_on()
+        prev_theme = str(self.ctl.cfg.get("theme", "dark"))
+        prev_mode = str(self.ctl.cfg.get("game_mode", "normal"))
 
         def _on_save(new_cfg: dict) -> None:
             self.ctl.cfg.update(new_cfg)
@@ -313,6 +346,16 @@ class App(tk.Tk):
                 bool(new_cfg.get("start_minimized", False))
             if want_tray and self._tray is None:
                 self._init_tray()
+            # тема меняется на месте — пересобираем основной UI
+            new_theme = str(new_cfg.get("theme", "dark"))
+            if new_theme != prev_theme:
+                apply_theme(new_theme)
+                self._rebuild_ui()
+            # режим (обычный/гейминг) применяется только после перезапуска zapret
+            new_mode = str(new_cfg.get("game_mode", "normal"))
+            if was_on and new_mode != prev_mode:
+                # restart ниже подхватит новое значение из cfg
+                pass
             if was_on:
                 self.ctl.restart_with_new_config()
             self._refresh_status_text()
@@ -324,6 +367,47 @@ class App(tk.Tk):
             DpiTestDialog(self)
         except Exception:
             log.exception("dpi test dialog failed")
+
+    def _open_tg_guide(self) -> None:
+        try:
+            TgVcGuideDialog(self, self.ctl.cfg)
+        except Exception:
+            log.exception("tg guide dialog failed")
+
+    def _cycle_theme(self) -> None:
+        themes = available_themes()
+        cur = str(self.ctl.cfg.get("theme", "dark"))
+        try:
+            idx = themes.index(cur)
+        except ValueError:
+            idx = -1
+        nxt = themes[(idx + 1) % len(themes)]
+        self.ctl.cfg["theme"] = nxt
+        self.ctl.save()
+        apply_theme(nxt)
+        self._rebuild_ui()
+
+    def _rebuild_ui(self) -> None:
+        """Пересобрать главное окно после смены темы.
+
+        Сам объект ``THEME`` мутируется на месте, но виджеты Tk не пересчитывают
+        свои цвета автоматически — поэтому уничтожаем содержимое окна и собираем
+        заново. Все колбэки контроллера привязаны к ``self`` и переживают
+        пересборку.
+        """
+        try:
+            for w in self.winfo_children():
+                w.destroy()
+        except Exception:
+            log.exception("rebuild: destroy children failed")
+        self.configure(bg=THEME.bg)
+        try:
+            self.option_add("*Menu.background", THEME.card)
+            self.option_add("*Menu.foreground", THEME.text_primary)
+        except Exception:
+            pass
+        self._build()
+        self._refresh_status_text()
 
     def _copy_link(self) -> None:
         cfg = self.ctl.cfg

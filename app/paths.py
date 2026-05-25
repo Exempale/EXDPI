@@ -43,3 +43,16 @@ def icon_ico() -> Path:
 
 def icon_png() -> Path:
     return resource_root() / "icon.png"
+
+
+def blocklists_root() -> Path:
+    """Папка с пресетами доменов (blocklists/*.txt).
+
+    Лежит рядом с resources/ — в dev-режиме это корень репо, в onefile-сборке
+    она кладётся в _MEIPASS через build.spec (см. data-include).
+    """
+    for c in _candidates():
+        p = c / "blocklists"
+        if p.is_dir():
+            return p
+    return _candidates()[0] / "blocklists"

@@ -7,9 +7,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
 
-from . import paths
-from .config import DEFAULT_CUSTOM_DOMAINS, normalize_domain_list, parse_domains
-from .theme import THEME
+from . import paths, presets
+from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
+from .theme import THEME, available_themes, label_for as theme_label_for
 from .widgets import IconButton
 from .zapret_runner import list_strategies
 
@@ -317,6 +317,234 @@ class _DomainsBox(tk.Frame):
         self._set_text(merged)
 
 
+class _PresetPicker(tk.Frame):
+    """Ряд «кнопок-чипсов» для быстрого переключения готовых наборов доменов.
+
+    При клике подгружает домены пресета в связанный ``_DomainsBox``. Текущий
+    выбор подсвечивается акцентным цветом. Сохраняется как ``domain_preset``
+    в config.json.
+    """
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        label: str,
+        sub: str,
+        value: str,
+        domains_box: "_DomainsBox",
+    ) -> None:
+        super().__init__(master, bg=THEME.bg)
+        self._domains_box = domains_box
+        self._presets = presets.presets()
+        self._selected = value if any(p.id == value for p in self._presets) else "custom"
+
+        tk.Label(
+            self, text=label.upper(),
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            self, text=sub,
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9),
+            anchor="w", wraplength=370, justify="left",
+        ).pack(fill="x", pady=(2, 6))
+
+        self._chip_row = tk.Frame(self, bg=THEME.bg)
+        self._chip_row.pack(fill="x")
+
+        self._chips: Dict[str, tk.Label] = {}
+        # описание текущего пресета — обновляется при выборе
+        self._desc_lbl = tk.Label(
+            self, text="",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "italic"),
+            anchor="w", wraplength=370, justify="left",
+        )
+        self._desc_lbl.pack(fill="x", pady=(6, 0))
+
+        for p in self._presets:
+            chip = tk.Label(
+                self._chip_row, text=" " + p.label + " ",
+                bg=THEME.card, fg=THEME.text_secondary,
+                font=(THEME.font_ui, 9),
+                padx=10, pady=4, cursor="hand2",
+            )
+            chip.pack(side="left", padx=(0, 6), pady=(0, 4))
+            chip.bind("<Button-1>", lambda _e, pid=p.id: self._on_pick(pid))
+            self._chips[p.id] = chip
+
+        self._refresh_chip_colors()
+        self._refresh_desc()
+
+    def get(self) -> str:
+        return self._selected
+
+    def _on_pick(self, preset_id: str) -> None:
+        self._selected = preset_id
+        self._refresh_chip_colors()
+        self._refresh_desc()
+        if preset_id == "custom":
+            # ничего не подгружаем — оставляем то, что уже введено
+            return
+        try:
+            domains = presets.load_domains(preset_id)
+        except Exception:
+            domains = []
+        if not domains:
+            try:
+                messagebox.showwarning(
+                    "EXDPI",
+                    "Пресет пуст или файл со списком доменов не найден.",
+                    parent=self.winfo_toplevel(),
+                )
+            except Exception:
+                pass
+            return
+        # перезапись пользовательского списка
+        self._domains_box._set_text(domains)
+
+    def _refresh_chip_colors(self) -> None:
+        for pid, chip in self._chips.items():
+            if pid == self._selected:
+                chip.configure(bg=THEME.accent_dark, fg=THEME.text_primary)
+            else:
+                chip.configure(bg=THEME.card, fg=THEME.text_secondary)
+
+    def _refresh_desc(self) -> None:
+        p = presets.by_id(self._selected)
+        if p:
+            self._desc_lbl.configure(text=p.description)
+        else:
+            self._desc_lbl.configure(text="")
+
+
+class _ModePicker(tk.Frame):
+    """Сегментный переключатель «обычный / гейминг» для zapret.
+
+    Сохраняется как ``game_mode`` в config.json. Влияет на подстановку
+    %GameFilter*% при запуске winws.exe (см. zapret_runner.parse_strategy).
+    """
+
+    OPTIONS = (("normal", "обычный"), ("gaming", "гейминг"))
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        label: str,
+        sub: str,
+        value: str,
+    ) -> None:
+        super().__init__(master, bg=THEME.bg)
+        self._selected = value if value in GAME_MODES else "normal"
+
+        tk.Label(
+            self, text=label.upper(),
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            self, text=sub,
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9),
+            anchor="w", wraplength=370, justify="left",
+        ).pack(fill="x", pady=(2, 6))
+
+        row = tk.Frame(self, bg=THEME.bg)
+        row.pack(fill="x")
+
+        self._buttons: Dict[str, tk.Label] = {}
+        for mid, label_text in self.OPTIONS:
+            btn = tk.Label(
+                row, text=" " + label_text + " ",
+                bg=THEME.card, fg=THEME.text_secondary,
+                font=(THEME.font_ui, 10, "bold"),
+                padx=14, pady=6, cursor="hand2",
+            )
+            btn.pack(side="left", padx=(0, 6))
+            btn.bind("<Button-1>", lambda _e, m=mid: self._on_pick(m))
+            self._buttons[mid] = btn
+        self._refresh()
+
+    def get(self) -> str:
+        return self._selected
+
+    def _on_pick(self, mode: str) -> None:
+        if mode not in GAME_MODES:
+            return
+        self._selected = mode
+        self._refresh()
+
+    def _refresh(self) -> None:
+        for mid, btn in self._buttons.items():
+            if mid == self._selected:
+                btn.configure(bg=THEME.accent, fg=THEME.bg)
+            else:
+                btn.configure(bg=THEME.card, fg=THEME.text_secondary)
+
+
+class _ThemePicker(tk.Frame):
+    """Радио-переключатель темы оформления (dark/light/midnight)."""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        label: str,
+        sub: str,
+        value: str,
+    ) -> None:
+        super().__init__(master, bg=THEME.bg)
+        self._themes = available_themes()
+        self._selected = value if value in self._themes else "dark"
+
+        tk.Label(
+            self, text=label.upper(),
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            self, text=sub,
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9),
+            anchor="w", wraplength=370, justify="left",
+        ).pack(fill="x", pady=(2, 6))
+
+        row = tk.Frame(self, bg=THEME.bg)
+        row.pack(fill="x")
+
+        self._buttons: Dict[str, tk.Label] = {}
+        for name in self._themes:
+            btn = tk.Label(
+                row, text=" " + theme_label_for(name) + " ",
+                bg=THEME.card, fg=THEME.text_secondary,
+                font=(THEME.font_ui, 10, "bold"),
+                padx=14, pady=6, cursor="hand2",
+            )
+            btn.pack(side="left", padx=(0, 6), pady=(0, 4))
+            btn.bind("<Button-1>", lambda _e, n=name: self._on_pick(n))
+            self._buttons[name] = btn
+        self._refresh()
+
+    def get(self) -> str:
+        return self._selected
+
+    def _on_pick(self, name: str) -> None:
+        if name not in self._themes:
+            return
+        self._selected = name
+        self._refresh()
+
+    def _refresh(self) -> None:
+        for name, btn in self._buttons.items():
+            if name == self._selected:
+                btn.configure(bg=THEME.accent, fg=THEME.bg)
+            else:
+                btn.configure(bg=THEME.card, fg=THEME.text_secondary)
+
+
 class _CheckRow(tk.Frame):
     """Строка с описанием и переключателем-чекбоксом."""
 
@@ -555,6 +783,16 @@ class SettingsWindow(tk.Toplevel):
         )
         self._strategy.pack(fill="x", pady=(0, 14))
 
+        # режим работы запрета (обычный вс игровой)
+        self._game_mode = _ModePicker(
+            body, "Режим запрета",
+            "Обычный — фильтр только по стандартным TLS/HTTP/QUIC портам (экономит CPU). "
+            "Гейминг — GameFilter=1024-65535 для TCP+UDP: обход Discord-голоса, игровых лобби и P2P. "
+            "Применяется при следующем включении или при «сохранить» при включённом EXDPI.",
+            value=str(self.cfg.get("game_mode", "normal")),
+        )
+        self._game_mode.pack(fill="x", pady=(0, 14))
+
         # proxy port
         self._port = _Field(
             body, "Порт прокси",
@@ -589,13 +827,24 @@ class SettingsWindow(tk.Toplevel):
         regen.pack(anchor="e", pady=(4, 0))
         regen.bind("<Button-1>", lambda _e: self._regen_secret())
 
-        # custom domains
+        # пресеты готовых доменов (config lists)
         self._domains = _DomainsBox(
             body,
             "Свои домены для обхода",
             "По одному на строке или через ; — попадут в list-general-user.txt zapret. ChatGPT, Claude, Devin и др. уже в дефолтах. Применяется при следующем включении.",
             normalize_domain_list(self.cfg.get("custom_domains") or DEFAULT_CUSTOM_DOMAINS),
         )
+
+        self._preset = _PresetPicker(
+            body,
+            "Готовые конфиг-листы",
+            "Одним кликом подгружаются подборки доменов в поле ниже (ИИ, игры, соцсети, русские блоки). "
+            "«Свой набор» оставляет ваш текущий список нетронутым.",
+            value=str(self.cfg.get("domain_preset", "custom")),
+            domains_box=self._domains,
+        )
+        self._preset.pack(fill="x", pady=(0, 8))
+
         self._domains.pack(fill="x", pady=(0, 14))
 
         # toggles
@@ -643,6 +892,18 @@ class SettingsWindow(tk.Toplevel):
         )
         self._start_min.pack(fill="x", pady=(0, 8))
 
+        # ── разделитель ─────────────────────────────────────────────
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
+
+        # тема интерфейса
+        self._theme = _ThemePicker(
+            body, "Тема интерфейса",
+            "Цветовая схема приложения. Применяется сразу после сохранения, "
+            "без перезапуска.",
+            value=str(self.cfg.get("theme", "dark")),
+        )
+        self._theme.pack(fill="x", pady=(0, 8))
+
         # небольшой отступ снизу скролла, чтобы последний пункт не липал
         # к разделителю над футером
         tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
@@ -669,9 +930,12 @@ class SettingsWindow(tk.Toplevel):
         out["zapret_enabled"] = self._zapret_on.get()
         out["proxy_enabled"] = self._proxy_on.get()
         out["custom_domains"] = self._domains.get()
+        out["domain_preset"] = self._preset.get()
+        out["game_mode"] = self._game_mode.get()
         out["autostart_with_windows"] = self._autostart.get()
         out["minimize_to_tray"] = self._tray.get()
         out["start_minimized"] = self._start_min.get()
+        out["theme"] = self._theme.get()
 
         self.on_save(out)
         self.destroy()

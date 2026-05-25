@@ -31,11 +31,17 @@ def list_strategies() -> List[str]:
     return items or ["general.bat"]
 
 
-def parse_strategy(bat_name: str) -> List[str]:
+def parse_strategy(bat_name: str, game_mode: str = "normal") -> List[str]:
     """Извлечь аргументы winws.exe из .bat-стратегии.
 
     Подставляет %BIN% / %LISTS% / GameFilter*. Возвращает уже готовый
     argv-список без самого winws.exe.
+
+    ``game_mode``:
+        * "normal" — GameFilter=12 (как при выключенном фильтре в оригинальном
+          service.bat — обрабатываются только стандартные TLS/HTTP/QUIC порты);
+        * "gaming" — GameFilter=1024-65535 для TCP+UDP (Discord-голос,
+          игровые лобби, P2P-трафик), как в режиме "all" service.bat.
     """
     bat_path = paths.zapret_root() / bat_name
     if not bat_path.exists():
@@ -56,11 +62,14 @@ def parse_strategy(bat_name: str) -> List[str]:
     bin_dir = str(paths.zapret_bin()) + os.sep
     lists_dir = str(paths.zapret_lists()) + os.sep
     args_text = args_text.replace("%BIN%", bin_dir).replace("%LISTS%", lists_dir)
-    # фильтр игр выключён по умолчанию (как в service.bat при отсутствии
-    # utils\game_filter.enabled). Подставляем "12" — этот же дефолт.
-    args_text = args_text.replace("%GameFilterTCP%", "12")
-    args_text = args_text.replace("%GameFilterUDP%", "12")
-    args_text = args_text.replace("%GameFilter%", "12")
+
+    # Game filter — высокие порты (1024-65535) для гейминг-режима, "12" для
+    # обычного. "12" — это спецзначение из service.bat, означающее «ничего
+    # не подставлять» и эквивалент выключенного фильтра.
+    game_ports = "1024-65535" if game_mode == "gaming" else "12"
+    args_text = args_text.replace("%GameFilterTCP%", game_ports)
+    args_text = args_text.replace("%GameFilterUDP%", game_ports)
+    args_text = args_text.replace("%GameFilter%", game_ports)
 
     # posix=True корректно разбирает кавычки внутри аргументов вида
     # --hostlist="/path/file.txt"
@@ -159,6 +168,7 @@ class ZapretRunner:
         strategy: str,
         on_exit: Optional[Callable[[int], None]] = None,
         custom_domains: Optional[List[str]] = None,
+        game_mode: str = "normal",
     ) -> None:
         with self._lock:
             if self._proc and self._proc.poll() is None:
@@ -168,7 +178,8 @@ class ZapretRunner:
             if custom_domains is not None:
                 n = write_user_hostlist(custom_domains)
                 log.info("user hostlist: %d domains", n)
-            args = parse_strategy(strategy)
+            log.info("zapret game_mode=%s", game_mode)
+            args = parse_strategy(strategy, game_mode=game_mode)
             winws = paths.zapret_bin() / "winws.exe"
             if not winws.exists():
                 raise RuntimeError(f"winws.exe не найден: {winws}")

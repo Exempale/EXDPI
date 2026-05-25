@@ -60,6 +60,7 @@ class Controller:
                     self.cfg.get("zapret_strategy", "general.bat"),
                     on_exit=self._zapret_exit,
                     custom_domains=list(self.cfg.get("custom_domains") or []),
+                    game_mode=str(self.cfg.get("game_mode", "normal")),
                 )
         except Exception as exc:
             log.exception("start failed")

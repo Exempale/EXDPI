@@ -136,6 +136,20 @@ def normalize_domain_list(items: Iterable[Any]) -> List[str]:
     return out
 
 
+# Допустимые значения для game_mode:
+#   "normal"       — обычный режим (GameFilter=12, как при выключенном фильтре
+#                    в оригинальном service.bat — обрабатываются только
+#                    стандартные TLS/HTTP/QUIC порты);
+#   "gaming"       — игровой режим (GameFilter=1024-65535 для TCP+UDP, ловим
+#                    высокие порты — Discord-голос, игровые лобби, P2P).
+GAME_MODES = ("normal", "gaming")
+
+GAME_FILTER_PORTS = {
+    "normal": "12",
+    "gaming": "1024-65535",
+}
+
+
 DEFAULT: Dict[str, Any] = {
     # tg-ws-proxy
     "proxy_enabled": True,
@@ -148,6 +162,11 @@ DEFAULT: Dict[str, Any] = {
     "zapret_enabled": True,
     "zapret_strategy": "general (ALT10).bat",
     "custom_domains": list(DEFAULT_CUSTOM_DOMAINS),
+    # пресет «готовых доменов» — последний выбранный preset из blocklists/.
+    # При смене preset-а в UI его содержимое попадает в custom_domains.
+    "domain_preset": "custom",
+    # режим работы zapret: обычный или игровой (см. GAME_MODES выше).
+    "game_mode": "normal",
 
     # general
     "autostart_with_windows": False,
@@ -155,6 +174,8 @@ DEFAULT: Dict[str, Any] = {
     "minimize_to_tray": True,
     # запускать программу свёрнутой (например, при автозапуске Windows)
     "start_minimized": False,
+    # тема оформления интерфейса (см. app/theme.py: dark / light / midnight)
+    "theme": "dark",
 
     # авто-проверка обновлений: timestamp (sec since epoch), до которого
     # не показывать диалог (после клика «пропустить обновление» = +3 дня)
@@ -175,6 +196,10 @@ def load() -> Dict[str, Any]:
     if not cfg.get("proxy_secret"):
         cfg["proxy_secret"] = _default_secret()
     cfg["custom_domains"] = normalize_domain_list(cfg.get("custom_domains") or [])
+    if cfg.get("game_mode") not in GAME_MODES:
+        cfg["game_mode"] = "normal"
+    if not isinstance(cfg.get("theme"), str) or not cfg["theme"]:
+        cfg["theme"] = "dark"
     return cfg
 
 

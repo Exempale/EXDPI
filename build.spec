@@ -21,6 +21,8 @@ hiddenimports = [
     'app.widgets',
     'app.ui_app',
     'app.ui_settings',
+    'app.ui_tg_guide',
+    'app.presets',
     'app.config',
     'app.paths',
     'app.updater',
@@ -57,6 +59,14 @@ for path in zapret_root.rglob("*"):
     if path.is_file():
         rel_dir = path.parent.relative_to(ROOT)
         datas.append((str(path), str(rel_dir)))
+
+# Пресеты доменов для быстрого переключения «готовых конфиг-листов»
+blocklists_root = ROOT / "blocklists"
+if blocklists_root.is_dir():
+    for path in blocklists_root.rglob("*"):
+        if path.is_file():
+            rel_dir = path.parent.relative_to(ROOT)
+            datas.append((str(path), str(rel_dir)))
 
 
 a = Analysis(

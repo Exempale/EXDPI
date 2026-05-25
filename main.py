@@ -137,6 +137,16 @@ def _main_inner() -> int:
     log = logging.getLogger("dpibypass.main")
     log.info("starting EXDPI")
 
+    # Применяем сохранённую тему ДО создания виджетов — у tkinter нельзя
+    # просто «переопределить bg=…» для виджета задним числом без передёргивания.
+    try:
+        from app import config as appconfig
+        from app.theme import apply_theme
+        _cfg = appconfig.load()
+        apply_theme(str(_cfg.get("theme", "dark")))
+    except Exception:
+        logging.getLogger("dpibypass.main").exception("apply theme failed")
+
     from app.ui_app import App
 
     app = App()

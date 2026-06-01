@@ -337,6 +337,13 @@ class _PresetPicker(tk.Frame):
         self._domains_box = domains_box
         self._presets = presets.presets()
         self._selected = value if any(p.id == value for p in self._presets) else "custom"
+        # сохранённый пользовательский список (для custom-вкладки) — отдельный
+        # от пресетов, чтобы переключение туда-сюда не теряло его и не
+        # подставляло домены прошлого пресета.
+        if self._selected == "custom":
+            self._custom_saved: List[str] = list(domains_box.get())
+        else:
+            self._custom_saved = []
 
         tk.Label(
             self, text=label.upper(),
@@ -382,11 +389,18 @@ class _PresetPicker(tk.Frame):
         return self._selected
 
     def _on_pick(self, preset_id: str) -> None:
+        if preset_id == self._selected:
+            return
+        # уходим с custom — запомнить текущий пользовательский список
+        if self._selected == "custom":
+            self._custom_saved = list(self._domains_box.get())
         self._selected = preset_id
         self._refresh_chip_colors()
         self._refresh_desc()
         if preset_id == "custom":
-            # ничего не подгружаем — оставляем то, что уже введено
+            # вернулись к своему набору — восстановить ранее введённый список
+            # (а не оставлять домены прошлого пресета).
+            self._domains_box._set_text(list(self._custom_saved))
             return
         try:
             domains = presets.load_domains(preset_id)
@@ -402,7 +416,7 @@ class _PresetPicker(tk.Frame):
             except Exception:
                 pass
             return
-        # перезапись пользовательского списка
+        # подставить домены пресета (пользовательский список остался в _custom_saved)
         self._domains_box._set_text(domains)
 
     def _refresh_chip_colors(self) -> None:
@@ -605,8 +619,8 @@ class _CheckRow(tk.Frame):
 class SettingsWindow(tk.Toplevel):
     """Скользящее окно настроек поверх основного."""
 
-    WIDTH = 440
-    HEIGHT = 640
+    WIDTH = 800
+    HEIGHT = 630
 
     def __init__(self, master: tk.Tk, cfg: Dict[str, Any], on_save: Callable[[Dict[str, Any]], None]) -> None:
         super().__init__(master)
@@ -618,7 +632,7 @@ class SettingsWindow(tk.Toplevel):
         self.title("EXDPI · настройки")
         self.configure(bg=THEME.bg)
         self.resizable(True, True)
-        self.minsize(420, 460)
+        self.minsize(640, 480)
         self.transient(master)
         self.grab_set()
 
@@ -637,8 +651,8 @@ class SettingsWindow(tk.Toplevel):
         self.update_idletasks()
         screen_h = self.winfo_screenheight()
         screen_w = self.winfo_screenwidth()
-        req_w = self.WIDTH
-        req_h = min(self.HEIGHT, max(460, screen_h - 120))
+        req_w = min(self.WIDTH, screen_w - 40)
+        req_h = min(self.HEIGHT, screen_h - 80)
 
         mx = master.winfo_rootx()
         my = master.winfo_rooty()
@@ -749,31 +763,29 @@ class SettingsWindow(tk.Toplevel):
         body.bind("<Configure>", _on_body_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
 
-        # колесо мыши: скроллим, только пока курсор над диалогом
-        def _on_wheel(e: tk.Event) -> None:
+        # колесо мыши: привязываем рекурсивно к окну и всем дочерним виджетам
+        # — bind_all + Enter/Leave срывается, когда курсор уходит на дочерний
+        # виджет и Tk шлёт <Leave> на родителя.
+        def _on_wheel(e: tk.Event) -> str:
             try:
                 delta = int(-1 * (e.delta / 120))
             except Exception:
                 delta = -1 if getattr(e, "num", 0) == 4 else 1
             canvas.yview_scroll(delta, "units")
+            return "break"
 
-        def _bind_wheel(_e: tk.Event) -> None:
-            self._wheel_bind = canvas.bind_all("<MouseWheel>", _on_wheel)
-            canvas.bind_all("<Button-4>", _on_wheel)
-            canvas.bind_all("<Button-5>", _on_wheel)
-
-        def _unbind_wheel(_e: tk.Event) -> None:
+        def _bind_wheel_recursive(widget: tk.Misc) -> None:
             try:
-                canvas.unbind_all("<MouseWheel>")
-                canvas.unbind_all("<Button-4>")
-                canvas.unbind_all("<Button-5>")
+                widget.bind("<MouseWheel>", _on_wheel, add="+")
+                widget.bind("<Button-4>", _on_wheel, add="+")
+                widget.bind("<Button-5>", _on_wheel, add="+")
             except Exception:
                 pass
+            for ch in widget.winfo_children():
+                _bind_wheel_recursive(ch)
 
-        self.bind("<Enter>", _bind_wheel)
-        self.bind("<Leave>", _unbind_wheel)
-        # на закрытии — снять привязку
-        self.bind("<Destroy>", lambda _e: _unbind_wheel(_e))
+        self._bind_wheel_recursive = _bind_wheel_recursive
+        self._bind_wheel_recursive(self)
 
         # zapret strategy
         self._strategy = _Select(
@@ -786,9 +798,9 @@ class SettingsWindow(tk.Toplevel):
         # режим работы запрета (обычный вс игровой)
         self._game_mode = _ModePicker(
             body, "Режим запрета",
-            "Обычный — фильтр только по стандартным TLS/HTTP/QUIC портам (экономит CPU). "
-            "Гейминг — GameFilter=1024-65535 для TCP+UDP: обход Discord-голоса, игровых лобби и P2P. "
-            "Применяется при следующем включении или при «сохранить» при включённом EXDPI.",
+            "Обычный — фильтр только по стандартным TLS/HTTP/QUIC портам. "
+            "Гейминг — GameFilter=1024-65535 для TCP+UDP: голос Discord, "
+            "игровые лобби, P2P.",
             value=str(self.cfg.get("game_mode", "normal")),
         )
         self._game_mode.pack(fill="x", pady=(0, 14))
@@ -831,15 +843,17 @@ class SettingsWindow(tk.Toplevel):
         self._domains = _DomainsBox(
             body,
             "Свои домены для обхода",
-            "По одному на строке или через ; — попадут в list-general-user.txt zapret. ChatGPT, Claude, Devin и др. уже в дефолтах. Применяется при следующем включении.",
-            normalize_domain_list(self.cfg.get("custom_domains") or DEFAULT_CUSTOM_DOMAINS),
+            "Hostname по одному на строке или через ; . Попадают в "
+            "list-general-user.txt zapret. Изменения применяются при следующем "
+            "включении EXDPI.",
+            normalize_domain_list(self.cfg.get("custom_domains") or []),
         )
 
         self._preset = _PresetPicker(
             body,
             "Готовые конфиг-листы",
-            "Одним кликом подгружаются подборки доменов в поле ниже (ИИ, игры, соцсети, русские блоки). "
-            "«Свой набор» оставляет ваш текущий список нетронутым.",
+            "Подборки доменов одним кликом: ИИ, игры, соцсети, РФ-блоки. "
+            "«Свой набор» — пользовательский список (сохраняется отдельно).",
             value=str(self.cfg.get("domain_preset", "custom")),
             domains_box=self._domains,
         )
@@ -850,14 +864,14 @@ class SettingsWindow(tk.Toplevel):
         # toggles
         self._zapret_on = _CheckRow(
             body, "DPI bypass (zapret)",
-            "Запускать winws.exe в фоне для обхода DPI Discord/YouTube/etc.",
+            "Запускать winws.exe в фоне для обхода DPI.",
             bool(self.cfg.get("zapret_enabled", True)),
         )
         self._zapret_on.pack(fill="x", pady=(4, 8))
 
         self._proxy_on = _CheckRow(
             body, "Telegram MTProto Proxy",
-            "Локальный прокси, чтобы Telegram Desktop ходил через WebSocket.",
+            "Локальный прокси для Telegram Desktop через WebSocket.",
             bool(self.cfg.get("proxy_enabled", True)),
         )
         self._proxy_on.pack(fill="x", pady=(0, 8))
@@ -868,8 +882,7 @@ class SettingsWindow(tk.Toplevel):
         # автозапуск с Windows
         self._autostart = _CheckRow(
             body, "Запускать с Windows",
-            "Добавить EXDPI в автозагрузку Windows (HKCU\\…\\Run). "
-            "Запись убирается, если выключить тумблер.",
+            "Добавить EXDPI в автозагрузку Windows (HKCU\\…\\Run).",
             bool(self.cfg.get("autostart_with_windows", False)),
         )
         self._autostart.pack(fill="x", pady=(0, 8))
@@ -877,17 +890,15 @@ class SettingsWindow(tk.Toplevel):
         # сворачивать в трей по крестику
         self._tray = _CheckRow(
             body, "Сворачивать в трей",
-            "По крестику окна программа уходит в трей вместо выхода. "
-            "Из трея — двойной клик или «Открыть EXDPI» в меню.",
+            "По крестику окно прячется в трей вместо выхода.",
             bool(self.cfg.get("minimize_to_tray", True)),
         )
         self._tray.pack(fill="x", pady=(0, 8))
 
         # запускать свёрнутым
         self._start_min = _CheckRow(
-            body, "Запускать свёрнутым в трей",
-            "При старте программа сразу прячется в трей. Удобно вместе "
-            "с автозапуском, чтобы не мозолила глаза.",
+            body, "Запускать свёрнутым",
+            "При старте программа сразу уходит в трей.",
             bool(self.cfg.get("start_minimized", False)),
         )
         self._start_min.pack(fill="x", pady=(0, 8))
@@ -898,8 +909,7 @@ class SettingsWindow(tk.Toplevel):
         # тема интерфейса
         self._theme = _ThemePicker(
             body, "Тема интерфейса",
-            "Цветовая схема приложения. Применяется сразу после сохранения, "
-            "без перезапуска.",
+            "Цветовая схема приложения. Применяется сразу.",
             value=str(self.cfg.get("theme", "dark")),
         )
         self._theme.pack(fill="x", pady=(0, 8))
@@ -907,6 +917,12 @@ class SettingsWindow(tk.Toplevel):
         # небольшой отступ снизу скролла, чтобы последний пункт не липал
         # к разделителю над футером
         tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
+
+        # перепривязать колесо мыши к новым дочерним виджетам
+        try:
+            self._bind_wheel_recursive(self)
+        except Exception:
+            pass
 
     # actions
     def _regen_secret(self) -> None:

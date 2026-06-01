@@ -69,39 +69,15 @@ _LIGHT = Theme(
     knob_on="#FFFFFF",
 )
 
-_MIDNIGHT = Theme(
-    name="midnight",
-    bg="#070B12",
-    bg_elev="#0C111A",
-    card="#121826",
-    card_hover="#172033",
-    border="#1C2434",
-    text_primary="#E6EBF5",
-    text_secondary="#8A93A6",
-    text_muted="#525B6E",
-    accent="#7AA8FF",
-    accent_dim="#5C8DE8",
-    accent_dark="#26396A",
-    danger="#FF6E70",
-    danger_dim="#7E2E33",
-    track_off="#101626",
-    track_on="#5C8DE8",
-    knob_off="#7A8497",
-    knob_on="#EAF1FF",
-)
-
-
 THEMES: Dict[str, Theme] = {
     "dark": _DARK,
     "light": _LIGHT,
-    "midnight": _MIDNIGHT,
 }
 
 
 THEME_LABELS: Dict[str, str] = {
     "dark": "Тёмная",
     "light": "Светлая",
-    "midnight": "Полночь (тёмно-синяя)",
 }
 
 

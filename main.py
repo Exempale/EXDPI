@@ -17,6 +17,36 @@ from pathlib import Path
 from typing import Optional
 
 
+def _enable_dpi_awareness() -> None:
+    """Сообщить Windows, что приложение само рисует под High-DPI.
+
+    Без этого Tk-окно растягивается через bitmap-scaling — иконка в панели
+    задач и сам интерфейс выглядят замыленными на HiDPI-экранах.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        # Per-Monitor v2 (Windows 10 1703+). Если ОС старее — упадёт, тогда fallback.
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def _set_app_user_model_id() -> None:
+    """Чтобы Windows объединяла окна EXDPI и брала нашу иконку, а не Python.exe."""
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Exempale.EXDPI")
+    except Exception:
+        pass
+
+
 def _is_admin() -> bool:
     if sys.platform != "win32":
         return True
@@ -125,6 +155,9 @@ def _main_inner() -> int:
     if sys.platform == "win32" and not _is_admin():
         _relaunch_as_admin()
         return 0
+
+    _enable_dpi_awareness()
+    _set_app_user_model_id()
 
     if getattr(sys, "frozen", False):
         try:

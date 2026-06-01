@@ -23,46 +23,23 @@ log = logging.getLogger("dpibypass.ui.tg_guide")
 
 
 _STEPS_DESKTOP = [
-    ("1. Откройте Telegram Desktop",
-     "В программе перейдите в «Настройки» → «Продвинутые настройки» → "
-     "«Тип соединения»."),
-    ("2. Выберите «Использовать пользовательский прокси»",
-     "В появившемся окне нажмите «Добавить прокси» → выберите тип "
-     "«MTPROTO». Это та же опция, что подходит для голосовых "
-     "чатов (Voice Chats / VC)."),
-    ("3. Вставьте параметры подключения",
-     "Сервер: localhost (или 127.0.0.1). Порт: тот, что указан в EXDPI "
-     "(по умолчанию 1443). Секрет: 32-hex значение из настроек EXDPI."),
-    ("4. Проще: скопируйте готовую ссылку",
-     "Вернитесь в главное окно EXDPI и кликните по 📋 рядом с "
-     "«mtproto · 127.0.0.1:…». Затем в Telegram → «Настройки» → "
-     "«Продвинутые» → «Использовать пользовательский прокси» → "
-     "вставьте tg://proxy?… — клиент сам подставит поля."),
-    ("5. Включите EXDPI и проверьте",
-     "Нажмите большой переключатель ON. В Telegram Desktop в правом "
-     "верхнем углу должна появиться зелёная иконка прокси."),
-]
-
-_STEPS_MOBILE = [
-    ("Android / iOS",
-     "Откройте EXDPI на компьютере, скопируйте tg://proxy-ссылку (📋 в "
-     "главном окне) и отправьте её себе в Saved Messages. Тапните по "
-     "ссылке в мобильном Telegram — он сам предложит «Подключиться к "
-     "прокси». Учтите: телефон должен быть в одной локальной сети с "
-     "компьютером и видеть его IP, а в настройках EXDPI замените "
-     "хост 127.0.0.1 на локальный IP машины (например 192.168.0.5)."),
+    ("1. Откройте настройки Telegram Desktop",
+     "«Настройки» → «Продвинутые настройки» → «Тип соединения»."),
+    ("2. Добавьте MTPROTO-прокси",
+     "«Использовать пользовательский прокси» → «Добавить прокси» → тип «MTPROTO»."),
+    ("3. Введите параметры из блока выше",
+     "Сервер: 127.0.0.1. Порт и секрет — как указано выше."),
+    ("4. Быстрее: вставьте готовую tg://-ссылку",
+     "Скопируйте ссылку кнопкой ниже и вставьте в Telegram — поля заполнятся сами."),
+    ("5. Включите EXDPI",
+     "Нажмите большой переключатель ON. В Telegram появится значок активного прокси."),
 ]
 
 _STEPS_VOICE = [
-    ("Голосовые чаты (VC) и звонки",
-     "Telegram использует тот же прокси и для текста, и для voice chat. "
-     "Никакой отдельной настройки внутри Voice Chat не нужно — достаточно, "
-     "чтобы основной MTProto-прокси (localhost:порт) был активен. Если "
-     "вас не слышно/собеседника не слышно: обычно проблема в стратегии "
-     "zapret. В настройках попробуйте general (ALT10) → general (FAKE TLS "
-     "AUTO) → general (SIMPLE FAKE). Запасной вариант — включить «гейминг» "
-     "режим (он расширяет фильтр на высокие UDP-порты, через которые "
-     "ходит голос)."),
+    ("Голосовые чаты и звонки",
+     "Голос идёт через тот же MTPROTO-прокси — отдельной настройки не требуется. "
+     "Если слышимость хромает, в настройках EXDPI попробуйте другую стратегию zapret "
+     "(general ALT10 / FAKE TLS AUTO / SIMPLE FAKE) или включите режим «гейминг»."),
 ]
 
 
@@ -94,7 +71,12 @@ class TgVcGuideDialog(tk.Toplevel):
         self.update_idletasks()
         sh = self.winfo_screenheight()
         sw = self.winfo_screenwidth()
-        req_h = min(self.HEIGHT, max(460, sh - 120))
+        # реальная высота, нужная содержимому: header + footer + body.reqheight
+        try:
+            content_h = self.winfo_reqheight()
+        except Exception:
+            content_h = self.HEIGHT
+        req_h = min(max(self.HEIGHT, content_h + 20), sh - 100)
         mx = master.winfo_rootx()
         my = master.winfo_rooty()
         mw = master.winfo_width()
@@ -165,38 +147,42 @@ class TgVcGuideDialog(tk.Toplevel):
         body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(body_id, width=e.width))
 
-        # mousewheel scroll
-        def _on_wheel(e: tk.Event) -> None:
+        # mousewheel scroll — bind on the canvas itself and on every child
+        # widget; bind_all + Enter/Leave ломается, когда курсор уходит на
+        # дочерний виджет (Tk шлёт <Leave> на Toplevel и привязка снимается).
+        def _on_wheel(e: tk.Event) -> int:
             try:
                 delta = int(-1 * (e.delta / 120))
             except Exception:
                 delta = -1 if getattr(e, "num", 0) == 4 else 1
             canvas.yview_scroll(delta, "units")
+            return "break"
 
-        def _bind_wheel(_e: tk.Event) -> None:
-            canvas.bind_all("<MouseWheel>", _on_wheel)
-            canvas.bind_all("<Button-4>", _on_wheel)
-            canvas.bind_all("<Button-5>", _on_wheel)
-
-        def _unbind_wheel(_e: tk.Event) -> None:
+        def _bind_wheel_recursive(widget: tk.Misc) -> None:
             try:
-                canvas.unbind_all("<MouseWheel>")
-                canvas.unbind_all("<Button-4>")
-                canvas.unbind_all("<Button-5>")
+                widget.bind("<MouseWheel>", _on_wheel, add="+")
+                widget.bind("<Button-4>", _on_wheel, add="+")
+                widget.bind("<Button-5>", _on_wheel, add="+")
             except Exception:
                 pass
+            for ch in widget.winfo_children():
+                _bind_wheel_recursive(ch)
 
-        self.bind("<Enter>", _bind_wheel)
-        self.bind("<Leave>", _unbind_wheel)
-        self.bind("<Destroy>", lambda _e: _unbind_wheel(_e))
+        self._bind_wheel_recursive = _bind_wheel_recursive
+        self._bind_wheel_recursive(self)
 
         # ── content sections ────────────────────────────────────────
         self._params_block(body)
         self._section(body, "Telegram Desktop (Windows / macOS / Linux)", _STEPS_DESKTOP)
-        self._section(body, "На телефоне", _STEPS_MOBILE)
         self._section(body, "Голосовые чаты и звонки", _STEPS_VOICE)
 
         tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
+
+        # после построения всего содержимого — перепривязать скролл к новым детям
+        try:
+            self._bind_wheel_recursive(self)
+        except Exception:
+            pass
 
     def _params_block(self, master: tk.Misc) -> None:
         host = self.cfg.get("proxy_host", "127.0.0.1")

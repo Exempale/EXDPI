@@ -372,21 +372,45 @@ class IconButton(tk.Canvas):
                          capstyle="round")
 
     def _draw_theme(self, s: int, color: str) -> None:
-        """Иконка-«полумесяц/солнце» — переключение темы.
+        """Иконка переключения темы: солнце для светлой, луна для тёмной.
 
-        Полный круг закрашен текущим цветом, второй круг того же фона
-        накладывается со сдвигом — получается полумесяц.
+        Глиф зависит от текущей THEME.name — пользователь видит, на какую
+        тему он переключится. Светлая тема: солнце с лучами; тёмная: луна
+        (полумесяц).
         """
+        import math as _m
         bg = str(self.cget("bg"))
-        pad = s * 0.22
-        self.create_oval(pad, pad, s - pad, s - pad, fill=color, outline="")
-        # вырезаем «другой круг» цветом фона — получается полумесяц
-        cut = s * 0.18
-        self.create_oval(
-            pad + cut * 0.4, pad - cut * 0.2,
-            s - pad + cut * 0.6, s - pad - cut * 0.2,
-            fill=bg, outline="",
-        )
+        cx = cy = s / 2
+
+        if THEME.name == "dark":
+            # рисуем солнышко — намёк, что клик переключит на светлую
+            body_r = s * 0.22
+            ray_in = s * 0.30
+            ray_out = s * 0.42
+            for i in range(8):
+                ang = i * (2 * _m.pi / 8)
+                ca, sa = _m.cos(ang), _m.sin(ang)
+                self.create_line(
+                    cx + ca * ray_in, cy + sa * ray_in,
+                    cx + ca * ray_out, cy + sa * ray_out,
+                    fill=color, width=2, capstyle="round",
+                )
+            self.create_oval(
+                cx - body_r, cy - body_r, cx + body_r, cy + body_r,
+                fill=color, outline="",
+            )
+        else:
+            # рисуем луну — клик переключит на тёмную
+            r = s * 0.34
+            self.create_oval(cx - r, cy - r, cx + r, cy + r,
+                             fill=color, outline="")
+            # вырезаем фоновым кругом — получается полумесяц
+            cut = s * 0.30
+            self.create_oval(
+                cx - r + cut * 0.6, cy - r - cut * 0.1,
+                cx + r + cut * 0.6, cy + r - cut * 0.1,
+                fill=bg, outline="",
+            )
 
     @staticmethod
     def _rect(canvas: tk.Canvas, x1, y1, x2, y2, r=4, **kw) -> None:

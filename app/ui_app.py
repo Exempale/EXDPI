@@ -51,6 +51,16 @@ class App(tk.Tk):
         except Exception:
             pass
 
+        # Дополнительно ставим PNG как iconphoto — на HiDPI Windows иногда
+        # берёт именно его, и иконка получается резче.
+        try:
+            png = paths.icon_png()
+            if png.exists():
+                self._icon_photo = tk.PhotoImage(file=str(png))
+                self.iconphoto(True, self._icon_photo)
+        except Exception:
+            pass
+
         # удалим стандартное меню
         try:
             self.option_add("*Menu.background", THEME.card)
@@ -227,7 +237,7 @@ class App(tk.Tk):
         self.info_lbl.configure(text=f"mtproto · {host}:{port}")
 
         mode = str(cfg.get("game_mode", "normal"))
-        mode_text = "режим: гейминг (высокие порты)" if mode == "gaming" else "режим: обычный"
+        mode_text = "режим: гейминг" if mode == "gaming" else "режим: обычный"
         try:
             self.mode_lbl.configure(text=mode_text)
         except Exception:

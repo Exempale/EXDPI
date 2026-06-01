@@ -161,7 +161,9 @@ DEFAULT: Dict[str, Any] = {
     # zapret
     "zapret_enabled": True,
     "zapret_strategy": "general (ALT10).bat",
-    "custom_domains": list(DEFAULT_CUSTOM_DOMAINS),
+    # «Свои домены» по умолчанию пустые — пользователь сам наполняет список,
+    # либо переключается на один из готовых пресетов (см. domain_preset).
+    "custom_domains": [],
     # пресет «готовых доменов» — последний выбранный preset из blocklists/.
     # При смене preset-а в UI его содержимое попадает в custom_domains.
     "domain_preset": "custom",
@@ -174,7 +176,7 @@ DEFAULT: Dict[str, Any] = {
     "minimize_to_tray": True,
     # запускать программу свёрнутой (например, при автозапуске Windows)
     "start_minimized": False,
-    # тема оформления интерфейса (см. app/theme.py: dark / light / midnight)
+    # тема оформления интерфейса (см. app/theme.py: dark / light)
     "theme": "dark",
 
     # авто-проверка обновлений: timestamp (sec since epoch), до которого
@@ -198,7 +200,7 @@ def load() -> Dict[str, Any]:
     cfg["custom_domains"] = normalize_domain_list(cfg.get("custom_domains") or [])
     if cfg.get("game_mode") not in GAME_MODES:
         cfg["game_mode"] = "normal"
-    if not isinstance(cfg.get("theme"), str) or not cfg["theme"]:
+    if not isinstance(cfg.get("theme"), str) or cfg["theme"] not in ("dark", "light"):
         cfg["theme"] = "dark"
     return cfg
 

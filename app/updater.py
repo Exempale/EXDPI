@@ -56,6 +56,20 @@ def _is_newer(remote: Optional[str], local: Optional[str]) -> bool:
     return r > l
 
 
+def is_mandatory(remote: Optional[str]) -> bool:
+    """Обязательное ли это обновление?
+
+    Правило: если PATCH-часть (последний значащий компонент) версии равна 0
+    — например 1.5.0, 2.0.0 — обновление обязательно. Иначе (1.5.1, 1.5.9)
+    необязательно. Берём третью цифру; если её нет, считаем 0 (обязательно).
+    """
+    parts = _parse_version(remote)
+    if not parts:
+        return False
+    patch = parts[2] if len(parts) >= 3 else 0
+    return patch == 0
+
+
 # ── network ──────────────────────────────────────────────────────────
 
 
@@ -148,6 +162,8 @@ class UpdateDialog(tk.Toplevel):
         super().__init__(master)
         self._info = info
         self._on_skip = on_skip
+        self._mandatory = is_mandatory(info.get("tag"))
+        self._master = master
 
         self.title("EXDPI · обновление")
         self.configure(bg=THEME.bg)
@@ -187,7 +203,13 @@ class UpdateDialog(tk.Toplevel):
         y = max(10, min(y, screen_h - h - 60))
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-        self.protocol("WM_DELETE_WINDOW", self._skip)
+        # Обязательное обновление: крестик и Esc закрывают приложение целиком.
+        # Необязательное — обычное «отложить на 3 дня».
+        if self._mandatory:
+            self.protocol("WM_DELETE_WINDOW", self._force_quit)
+            self.bind("<Escape>", lambda _e: self._force_quit())
+        else:
+            self.protocol("WM_DELETE_WINDOW", self._skip)
 
     def _build(self) -> None:
         outer = tk.Frame(self, bg=THEME.bg, padx=24, pady=22)
@@ -196,15 +218,21 @@ class UpdateDialog(tk.Toplevel):
         # header
         header = tk.Frame(outer, bg=THEME.bg)
         header.pack(fill="x")
-        IconButton(
-            header, glyph="back", size=24,
-            on_click=self._skip, tooltip="Закрыть",
-        ).pack(side="left")
+        if not self._mandatory:
+            IconButton(
+                header, glyph="back", size=24,
+                on_click=self._skip, tooltip="Закрыть",
+            ).pack(side="left")
+            title_pad = (12, 0)
+        else:
+            title_pad = (0, 0)
         title_box = tk.Frame(header, bg=THEME.bg)
-        title_box.pack(side="left", padx=(12, 0))
+        title_box.pack(side="left", padx=title_pad)
         tk.Label(
-            title_box, text="ОБНОВЛЕНИЕ",
-            fg=THEME.text_secondary, bg=THEME.bg,
+            title_box,
+            text="ОБЯЗАТЕЛЬНОЕ ОБНОВЛЕНИЕ" if self._mandatory else "ОБНОВЛЕНИЕ",
+            fg=THEME.danger if self._mandatory else THEME.text_secondary,
+            bg=THEME.bg,
             font=(THEME.font_ui, 8, "bold"), anchor="w",
         ).pack(anchor="w")
         tk.Label(
@@ -232,12 +260,19 @@ class UpdateDialog(tk.Toplevel):
             font=(THEME.font_ui, 10, "bold"),
             anchor="w",
         ).pack(anchor="w", pady=(2, 0))
+        if self._mandatory:
+            body_text = (
+                "Это обязательное обновление — пропустить его нельзя.\n"
+                "Откройте страницу релиза, скачайте новый EXDPI.exe\n"
+                "и замените старый. Без обновления программа закроется."
+            )
+        else:
+            body_text = (
+                "Откройте страницу релиза, скачайте новый EXDPI.exe\n"
+                "и замените старый."
+            )
         tk.Label(
-            body,
-            text=(
-                "Пожалуйста, обновитесь — нажмите «открыть страницу релиза»,\n"
-                "скачайте новый EXDPI.exe и замените старый."
-            ),
+            body, text=body_text,
             fg=THEME.text_secondary, bg=THEME.bg,
             font=(THEME.font_ui, 10),
             anchor="w", justify="left", wraplength=340,
@@ -258,13 +293,22 @@ class UpdateDialog(tk.Toplevel):
         footer = tk.Frame(outer, bg=THEME.bg)
         footer.pack(side="bottom", fill="x", pady=(16, 0))
 
-        skip = tk.Label(
-            footer, text="пропустить обновление",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 10), cursor="hand2",
-        )
-        skip.pack(side="left", padx=(2, 0))
-        skip.bind("<Button-1>", lambda _e: self._skip())
+        if not self._mandatory:
+            skip = tk.Label(
+                footer, text="пропустить обновление",
+                fg=THEME.text_secondary, bg=THEME.bg,
+                font=(THEME.font_ui, 10), cursor="hand2",
+            )
+            skip.pack(side="left", padx=(2, 0))
+            skip.bind("<Button-1>", lambda _e: self._skip())
+        else:
+            quit_lbl = tk.Label(
+                footer, text="закрыть программу",
+                fg=THEME.danger_dim, bg=THEME.bg,
+                font=(THEME.font_ui, 10), cursor="hand2",
+            )
+            quit_lbl.pack(side="left", padx=(2, 0))
+            quit_lbl.bind("<Button-1>", lambda _e: self._force_quit())
 
         open_btn = tk.Label(
             footer, text="  открыть страницу релиза  ",
@@ -283,12 +327,32 @@ class UpdateDialog(tk.Toplevel):
             webbrowser.open(url, new=2)
         except Exception:
             log.exception("failed to open release URL")
-        # после открытия страницы — закрываем диалог, но не «откладываем на 3 дня»:
-        # пользователь сам пошёл обновляться, при следующем запуске уже будет новая версия.
+        # после открытия страницы — закрываем диалог.
+        # В обязательном режиме также завершаем приложение, чтобы
+        # пользователь точно скачал и установил новую версию.
+        if self._mandatory:
+            self._force_quit()
+            return
         try:
             self.destroy()
         except Exception:
             pass
+
+    def _force_quit(self) -> None:
+        """Обязательное обновление: закрытие диалога завершает программу."""
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        # пытаемся аккуратно закрыть главное окно
+        try:
+            quit_fn = getattr(self._master, "_quit_app", None)
+            if callable(quit_fn):
+                quit_fn()
+                return
+            self._master.destroy()
+        except Exception:
+            log.exception("force quit failed")
 
     def _skip(self) -> None:
         try:

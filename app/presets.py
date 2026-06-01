@@ -42,12 +42,12 @@ PRESETS: List[Preset] = [
     Preset(
         id="custom",
         label="Свой набор",
-        description="Ручной список из поля ниже. Не перезаписывается пресетами.",
+        description="Ваш собственный список доменов из поля ниже. Сохраняется отдельно от пресетов.",
         source="custom",
     ),
     Preset(
         id="ai",
-        label="ИИ-сервисы (дефолт)",
+        label="ИИ-сервисы",
         description="ChatGPT, Claude, Devin, Gemini, Grok, Perplexity, HuggingFace.",
         source="builtin",
     ),

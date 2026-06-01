@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -m py_compile app/theme.py app/ui_app.py app/ui_settings.py app/ui_tg_guide.py app/updater.py app/widgets.py app/config.py app/presets.py)",
-      "Bash(python -m py_compile main.py app/__init__.py app/ui_app.py app/ui_settings.py)"
-    ]
-  }
-}

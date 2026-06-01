@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -151,11 +152,77 @@ def _setup_logging() -> None:
     logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
+_SINGLE_INSTANCE_MUTEX = None  # глобал — мьютекс держим живым весь процесс
+
+
+def _acquire_single_instance() -> bool:
+    """Не дать запустить второй экземпляр EXDPI.
+
+    Без этой защиты пользователь дважды кликал по .exe → второй процесс
+    получал OSError 10048 (порт 1443 занят) и rc=1 от winws.exe из-за
+    конфликта WinDivert-фильтров.
+    """
+    global _SINGLE_INSTANCE_MUTEX
+    if sys.platform != "win32":
+        return True
+    try:
+        ERROR_ALREADY_EXISTS = 183
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.argtypes = [
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p,
+        ]
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        # Global\\ — общий для всех сессий (нужны права администратора).
+        handle = kernel32.CreateMutexW(None, 0, "Global\\EXDPI_SingleInstance")
+        last_err = kernel32.GetLastError()
+        if not handle:
+            return True
+        if last_err == ERROR_ALREADY_EXISTS:
+            try:
+                ctypes.windll.user32.MessageBoxW(
+                    None,
+                    "EXDPI уже запущен.\n\n"
+                    "Найдите иконку в системном трее или закройте старый процесс "
+                    "(Диспетчер задач → EXDPI.exe).",
+                    "EXDPI",
+                    0x40,
+                )
+            except Exception:
+                pass
+            return False
+        _SINGLE_INSTANCE_MUTEX = handle
+        return True
+    except Exception:
+        return True
+
+
+def _kill_orphan_winws_startup() -> None:
+    """Убить осиротевший winws.exe от прошлой сессии EXDPI, если такой висит."""
+    if sys.platform != "win32":
+        return
+    try:
+        CREATE_NO_WINDOW = 0x08000000
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "winws.exe"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+
 def _main_inner() -> int:
     if sys.platform == "win32" and not _is_admin():
         _relaunch_as_admin()
         return 0
 
+    if not _acquire_single_instance():
+        return 0
+
+    _kill_orphan_winws_startup()
     _enable_dpi_awareness()
     _set_app_user_model_id()
 

@@ -1,0 +1,6 @@
+pyinstaller
+pystray
+Pillow
+pyperclip
+cryptography
+psutil

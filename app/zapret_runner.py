@@ -8,12 +8,43 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
 from . import paths
 
 log = logging.getLogger("dpibypass.zapret")
+
+
+def _kill_orphan_winws() -> int:
+    """Убить чужие/осиротевшие winws.exe перед запуском нашего.
+
+    winws.exe ставит WinDivert-фильтр на сетевом уровне. Два процесса
+    одновременно с одинаковым фильтром = моментальный rc=1 ("filter handle
+    in use"). Прошлый процесс (например, после краша или нескольких запусков
+    EXDPI подряд) держит фильтр и не даёт стартовать новому.
+    """
+    if sys.platform != "win32":
+        return 0
+    killed = 0
+    try:
+        CREATE_NO_WINDOW = 0x08000000
+        result = subprocess.run(
+            ["taskkill", "/F", "/IM", "winws.exe"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            out = result.stdout.decode("cp866", errors="replace")
+            killed = out.count("PID")
+            log.info("killed orphan winws.exe (%d)", killed)
+    except Exception:
+        log.exception("kill orphan winws failed")
+    return killed
 
 
 _START_RE = re.compile(
@@ -153,6 +184,7 @@ class ZapretRunner:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._strategy: Optional[str] = None
+        self._err_fp = None  # type: ignore[var-annotated]
 
     @property
     def is_running(self) -> bool:
@@ -174,6 +206,10 @@ class ZapretRunner:
             if self._proc and self._proc.poll() is None:
                 return
 
+            # убиваем осиротевшие winws.exe от предыдущих запусков —
+            # иначе WinDivert-фильтр занят и наш winws.exe моментально rc=1.
+            _kill_orphan_winws()
+
             ensure_user_lists()
             if custom_domains is not None:
                 n = write_user_hostlist(custom_domains)
@@ -188,10 +224,21 @@ class ZapretRunner:
             log.info("zapret start: %s", strategy)
             log.debug("argv: %s", cmd)
 
+            # Перенаправляем stderr winws.exe в файл рядом с config.json —
+            # без этого rc=1 диагностировать невозможно.
+            try:
+                from .config import app_dir
+                err_log_path = app_dir() / "winws-stderr.log"
+                err_log_path.parent.mkdir(parents=True, exist_ok=True)
+                # truncate
+                self._err_fp = open(err_log_path, "w", encoding="utf-8", errors="replace")
+            except Exception:
+                self._err_fp = None
+
             kw: dict = dict(
                 cwd=str(paths.zapret_bin()),
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=self._err_fp if self._err_fp else subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
             if sys.platform == "win32":
@@ -203,6 +250,12 @@ class ZapretRunner:
                 self._proc = subprocess.Popen(cmd, **kw)
             except Exception as exc:
                 log.error("zapret launch failed: %s", exc)
+                if self._err_fp:
+                    try:
+                        self._err_fp.close()
+                    except Exception:
+                        pass
+                    self._err_fp = None
                 raise
 
             self._strategy = strategy
@@ -217,6 +270,27 @@ class ZapretRunner:
             rc = self._proc.wait() if self._proc else 0  # type: ignore[union-attr]
         except Exception:
             rc = -1
+        # закрыть stderr-файл и при rc != 0 вытащить хвост в общий лог
+        try:
+            if self._err_fp:
+                self._err_fp.flush()
+                self._err_fp.close()
+        except Exception:
+            pass
+        self._err_fp = None
+        if rc != 0:
+            try:
+                from .config import app_dir
+                err_path = app_dir() / "winws-stderr.log"
+                if err_path.exists():
+                    text = err_path.read_text(encoding="utf-8", errors="replace")
+                    tail = text.strip().splitlines()[-10:]
+                    if tail:
+                        log.error("winws.exe stderr (last %d lines):", len(tail))
+                        for line in tail:
+                            log.error("  %s", line)
+            except Exception:
+                pass
         try:
             on_exit(rc)
         except Exception:
@@ -246,3 +320,7 @@ class ZapretRunner:
                 pass
         except Exception:
             pass
+
+        # на всякий случай добиваем любые осиротевшие winws.exe — иначе
+        # следующий start() снова словит rc=1 из-за занятого фильтра.
+        _kill_orphan_winws()

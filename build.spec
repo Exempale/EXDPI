@@ -46,12 +46,17 @@ hiddenimports = [
     'proxy.utils',
 ]
 
-# cryptography — нативный _rust.pyd + бинарные зависимости
-for pkg in ('cryptography',):
-    pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
-    datas += pkg_datas
-    binaries += pkg_binaries
-    hiddenimports += pkg_hidden
+# cryptography — нативный _rust.pyd + бинарные зависимости.
+# pystray — иначе теряются windows-специфичные подмодули (трей-иконка не работает).
+# PIL — нужен pystray для отрисовки иконки.
+for pkg in ('cryptography', 'pystray', 'PIL'):
+    try:
+        pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+        datas += pkg_datas
+        binaries += pkg_binaries
+        hiddenimports += pkg_hidden
+    except Exception as exc:
+        print(f"[build.spec] WARNING: collect_all({pkg}) failed: {exc}")
 
 # Включаем все ресурсы zapret (bin + lists + bat-стратегии)
 zapret_root = ROOT / "resources" / "zapret"

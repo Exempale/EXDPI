@@ -22,9 +22,9 @@ log = logging.getLogger("dpibypass.ui")
 
 class App(tk.Tk):
     WIDTH = 400
-    HEIGHT = 420
-    MIN_WIDTH = 360
-    MIN_HEIGHT = 380
+    HEIGHT = 400
+    MIN_WIDTH = 400
+    MIN_HEIGHT = 400
 
     def __init__(self) -> None:
         super().__init__()

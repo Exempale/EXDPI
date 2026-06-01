@@ -249,4 +249,4 @@ pyinstaller build.spec --clean --noconfirm
 * tg-ws-proxy — оригинальный код в `proxy/`, не модифицирован.
 
 [zapret-discord-youtube]: https://github.com/Flowseal/zapret-discord-youtube
-[tg-ws-proxy]: https://github.com/tg-ws-proxy/tg-ws-proxy
+[tg-ws-proxy]: https://github.com/Flowseal/tg-ws-proxy

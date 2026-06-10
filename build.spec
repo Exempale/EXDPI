@@ -9,6 +9,8 @@ ROOT = Path.cwd()
 datas = [
     (str(ROOT / "resources" / "icon.ico"), "resources"),
     (str(ROOT / "resources" / "icon.png"), "resources"),
+    # пасхалка — прикольная картинка, открывается 5 кликами по версии
+    (str(ROOT / "resources" / "easter" / "1.jpg"), "resources/easter"),
 ]
 binaries = []
 hiddenimports = [
@@ -22,6 +24,7 @@ hiddenimports = [
     'app.ui_app',
     'app.ui_settings',
     'app.ui_tg_guide',
+    'app.easter',
     'app.presets',
     'app.config',
     'app.paths',
@@ -35,6 +38,7 @@ hiddenimports = [
     'PIL',
     'PIL.Image',
     'PIL.ImageDraw',
+    'PIL.ImageTk',
     'proxy',
     'proxy.bridge',
     'proxy.balancer',

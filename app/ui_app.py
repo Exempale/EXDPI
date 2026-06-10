@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from typing import Optional
 
-from . import __version__, autostart, logs, notify, paths
+from . import __version__, autostart, easter, logs, notify, paths
 from .config import save as save_config
 from .controller import Controller
 from .theme import THEME, apply_theme, available_themes
@@ -231,11 +231,27 @@ class App(tk.Tk):
             fg=THEME.text_secondary, bg=THEME.bg,
             font=(THEME.font_ui, 9, "bold"),
         ).pack(side="left")
-        tk.Label(
+        # версия — она же скрытая пасхалка: 5 кликов подряд открывают
+        # прикольную картинку :D
+        self._egg_clicks = 0
+        ver_lbl = tk.Label(
             footer, text=f"EXDPI v{__version__}",
             fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8),
-        ).pack(side="right")
+            font=(THEME.font_ui, 8), cursor="hand2",
+        )
+        ver_lbl.pack(side="right")
+        ver_lbl.bind("<Button-1>", lambda _e: self._on_egg_click())
+
+    # ── пасхалка ─────────────────────────────────────────────────────
+    def _on_egg_click(self) -> None:
+        """5 кликов по версии в футере → открыть картинку-пасхалку."""
+        self._egg_clicks += 1
+        if self._egg_clicks >= 5:
+            self._egg_clicks = 0
+            try:
+                easter.show_easter_egg(self)
+            except Exception:
+                log.exception("easter egg failed")
 
     # ── status / refresh ─────────────────────────────────────────────
     def _refresh_status_text(self) -> None:

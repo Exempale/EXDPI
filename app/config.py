@@ -194,6 +194,9 @@ DEFAULT: Dict[str, Any] = {
     "theme": "dark",
     # уведомления Windows (вкл/выкл обхода, ошибки, обновления)
     "notifications_enabled": True,
+    # режим «Для разработчиков»: показывает в настройках сервисный раздел
+    # (логи, импорт/экспорт, мастер, запуск service.bat). По умолчанию выкл.
+    "developer_mode": False,
     # пройден ли анимированный мастер первого запуска (app/ui_wizard.py)
     "wizard_done": False,
 
@@ -225,7 +228,7 @@ def load() -> Dict[str, Any]:
     if not isinstance(cfg.get("securedns_provider"), str) or not cfg["securedns_provider"]:
         cfg["securedns_provider"] = "cloudflare"
     for bool_key in ("securedns_enabled", "securedns_set_system",
-                     "notifications_enabled", "wizard_done"):
+                     "notifications_enabled", "developer_mode", "wizard_done"):
         if not isinstance(cfg.get(bool_key), bool):
             cfg[bool_key] = bool(DEFAULT[bool_key])
     if not isinstance(cfg.get("zapret_strategy_auto_result"), str):

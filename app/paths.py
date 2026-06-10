@@ -36,6 +36,16 @@ def zapret_lists() -> Path:
     return zapret_root() / "lists"
 
 
+def service_bat() -> Path:
+    """Путь к service.bat zapret (диспетчер/меню оригинального zapret)."""
+    return zapret_root() / "service.bat"
+
+
+def easter_image() -> Path:
+    """Картинка-пасхалка (resources/easter/1.jpg). Бандлится через build.spec."""
+    return resource_root() / "easter" / "1.jpg"
+
+
 def icon_ico() -> Path:
     p = resource_root() / "icon.ico"
     return p

@@ -51,6 +51,38 @@ _START_RE = re.compile(
 )
 
 
+def open_service_bat() -> bool:
+    """Запустить service.bat (диспетчер/меню оригинального zapret).
+
+    Используется кнопкой в разделе «Для разработчиков». service.bat сам
+    запрашивает права администратора (через powershell RunAs), поэтому просто
+    открываем его в новом окне консоли. Возвращает True при успешном запуске.
+    """
+    bat = paths.service_bat()
+    if not bat.exists():
+        log.warning("service.bat не найден: %s", bat)
+        return False
+    try:
+        if sys.platform == "win32":
+            # cmd /c start "" "<bat>" — откроет .bat в собственном окне консоли,
+            # дальше service.bat сам поднимет UAC и покажет своё меню.
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(bat)],
+                cwd=str(bat.parent),
+                creationflags=CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
+            )
+        else:
+            # вне Windows .bat не выполнить — просто открываем файл на просмотр.
+            subprocess.Popen(["xdg-open", str(bat)])
+        log.info("service.bat запущен: %s", bat)
+        return True
+    except Exception:
+        log.exception("не удалось запустить service.bat")
+        return False
+
+
 def list_strategies() -> List[str]:
     """Все доступные стратегии (general*.bat)."""
     root = paths.zapret_root()
@@ -104,7 +136,40 @@ def parse_strategy(bat_name: str, game_mode: str = "normal") -> List[str]:
     # --hostlist="/path/file.txt"
     args = shlex.split(args_text, posix=True)
     args = [a.strip() for a in args if a.strip()]
+
+    # ── фикс Roblox в гейминг-режиме ────────────────────────────────
+    # Roblox держит игровое соединение по UDP на высоких портах
+    # (49152-65535, RakNet/ENet). В стоковых стратегиях единственная секция
+    # для этих портов фильтруется по ipset-all.txt, который у нас пустой
+    # (плейсхолдер) — поэтому игровой UDP-трафик Roblox не десинхронизируется
+    # и DPI его режет: сайт открывается, а в игру зайти нельзя.
+    # Добавляем отдельный профиль для игрового UDP БЕЗ привязки к ipset,
+    # чтобы фейки уходили на любые сервера Roblox. Только в гейминг-режиме —
+    # в обычном высокие порты не дивертятся (--wf-udp их не ловит).
+    if game_mode == "gaming":
+        args.extend(_roblox_udp_fix_args())
+
     return args
+
+
+def _roblox_udp_fix_args() -> List[str]:
+    """Доп. winws-профиль для игрового UDP Roblox (см. parse_strategy).
+
+    Десинхронизирует первые пакеты UDP-флоу на портах 49152-65535 без
+    ipset-привязки. cutoff=n2 — фейки только на старте соединения, дальше
+    трафик идёт без вмешательства (минимум влияния на пинг).
+    """
+    bin_dir = paths.zapret_bin()
+    fake_udp = bin_dir / "quic_initial_dbankcloud_ru.bin"
+    return [
+        "--new",
+        "--filter-udp=49152-65535",
+        "--dpi-desync=fake",
+        "--dpi-desync-any-protocol=1",
+        f"--dpi-desync-fake-unknown-udp={fake_udp}",
+        "--dpi-desync-repeats=8",
+        "--dpi-desync-cutoff=n2",
+    ]
 
 
 _USER_LISTS_DEFAULTS = {

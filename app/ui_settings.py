@@ -7,12 +7,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
 
-from . import logs, presets, paths, securedns, settings_io
+from . import easter, logs, presets, paths, securedns, settings_io
 from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
 from .strategy_auto import AUTO_STRATEGY_ID, AUTO_STRATEGY_LABEL, is_auto
 from .theme import THEME, available_themes, label_for as theme_label_for
 from .widgets import IconButton
-from .zapret_runner import list_strategies
+from .zapret_runner import list_strategies, open_service_bat
 
 
 def _hex_to_rgb(c: str):
@@ -572,10 +572,12 @@ class _CheckRow(tk.Frame):
         title: str,
         subtitle: str,
         value: bool,
+        on_change: Optional[Callable[[bool], None]] = None,
     ) -> None:
         super().__init__(master, bg=THEME.bg)
         self._var = tk.BooleanVar(value=value)
         self._on = value
+        self._on_change = on_change
 
         left = tk.Frame(self, bg=THEME.bg)
         left.pack(side="left", fill="x", expand=True)
@@ -605,6 +607,11 @@ class _CheckRow(tk.Frame):
         self._on = not self._on
         self._var.set(self._on)
         self._draw()
+        if self._on_change is not None:
+            try:
+                self._on_change(self._on)
+            except Exception:
+                pass
 
     def _draw(self) -> None:
         self._cv.delete("all")
@@ -994,18 +1001,31 @@ class SettingsWindow(tk.Toplevel):
         )
         self._theme.pack(fill="x", pady=(0, 8))
 
-        # ── разделитель: сервис ─────────────────────────────────────
+        # ── разделитель: режим разработчика ─────────────────────────
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
+        # переключатель «Для разработчиков»: показывает/прячет сервисный раздел
+        self._dev_mode = _CheckRow(
+            body, "Для разработчиков",
+            "Сервисные инструменты: логи, импорт/экспорт настроек, мастер "
+            "первого запуска и запуск service.bat.",
+            bool(self.cfg.get("developer_mode", False)),
+            on_change=self._on_dev_mode_toggle,
+        )
+        self._dev_mode.pack(fill="x", pady=(0, 8))
+
+        # контейнер сервисного раздела — пакуется только когда dev-режим включён
+        self._dev_box = tk.Frame(body, bg=THEME.bg)
+
         tk.Label(
-            body, text="СЕРВИС",
+            self._dev_box, text="ДЛЯ РАЗРАБОТЧИКОВ",
             fg=THEME.text_secondary, bg=THEME.bg,
             font=(THEME.font_ui, 8, "bold"), anchor="w",
-        ).pack(fill="x", pady=(0, 6))
+        ).pack(fill="x", pady=(2, 6))
 
         def _service_link(text: str, handler: Callable[[], None]) -> None:
             lbl = tk.Label(
-                body, text=text,
+                self._dev_box, text=text,
                 fg=THEME.accent_dim, bg=THEME.bg,
                 font=(THEME.font_ui, 10, "underline"),
                 cursor="hand2", anchor="w",
@@ -1018,6 +1038,27 @@ class SettingsWindow(tk.Toplevel):
         _service_link("импортировать настройки…", self._import_settings)
         if self._on_run_wizard is not None:
             _service_link("мастер первого запуска", self._run_wizard)
+
+        # кнопка запуска service.bat (диспетчер/меню оригинального zapret)
+        run_bat = tk.Label(
+            self._dev_box, text="  запустить service.bat  ",
+            fg=THEME.bg, bg=THEME.accent,
+            font=(THEME.font_ui, 10, "bold"),
+            cursor="hand2", padx=14, pady=7,
+        )
+        run_bat.pack(anchor="w", pady=(4, 2))
+        run_bat.bind("<Button-1>", lambda _e: self._open_service_bat())
+        run_bat.bind("<Enter>", lambda _e: run_bat.configure(bg=THEME.accent_dim))
+        run_bat.bind("<Leave>", lambda _e: run_bat.configure(bg=THEME.accent))
+        tk.Label(
+            self._dev_box,
+            text="Откроет консольное меню zapret (запросит права администратора).",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8), anchor="w", wraplength=420, justify="left",
+        ).pack(fill="x", pady=(0, 2))
+
+        if bool(self.cfg.get("developer_mode", False)):
+            self._dev_box.pack(fill="x", pady=(2, 0))
 
         # небольшой отступ снизу скролла, чтобы последний пункт не липал
         # к разделителю над футером
@@ -1069,6 +1110,7 @@ class SettingsWindow(tk.Toplevel):
         out["start_minimized"] = self._start_min.get()
         out["theme"] = self._theme.get()
         out["notifications_enabled"] = self._notify.get()
+        out["developer_mode"] = self._dev_mode.get()
         out["securedns_enabled"] = self._securedns_on.get()
         proto_rev = {v: k for k, v in self._dns_proto_labels.items()}
         out["securedns_protocol"] = proto_rev.get(self._dns_proto.get(), "doh")
@@ -1083,6 +1125,27 @@ class SettingsWindow(tk.Toplevel):
             return
         self.on_save(out)
         self.destroy()
+
+    # ── для разработчиков ───────────────────────────────────────────
+    def _on_dev_mode_toggle(self, on: bool) -> None:
+        """Показать/спрятать сервисный раздел при переключении dev-режима."""
+        try:
+            if on:
+                self._dev_box.pack(fill="x", pady=(2, 0))
+                # перепривязать колесо мыши к новым видимым виджетам
+                try:
+                    self._bind_wheel_recursive(self._dev_box)
+                except Exception:
+                    pass
+            else:
+                self._dev_box.pack_forget()
+        except Exception:
+            pass
+
+    def _open_service_bat(self) -> None:
+        if not open_service_bat():
+            messagebox.showerror(
+                "EXDPI", "Не удалось запустить service.bat.", parent=self)
 
     # ── сервис ──────────────────────────────────────────────────────
     def _open_logs(self) -> None:

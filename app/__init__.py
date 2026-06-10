@@ -1,4 +1,4 @@
-__version__ = "1.7.0"
+__version__ = "1.7.2"
 APP_NAME = "EXDPI"
 APP_INTERNAL_NAME = "EXDPI"
 GITHUB_REPO = "Exempale/EXDPI"

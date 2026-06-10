@@ -200,7 +200,7 @@ EXDPI/
 │   ├── proxy_runner.py     # Запуск tg-ws-proxy в фоновом потоке
 │   ├── config.py           # JSON-конфиг в %APPDATA%\EXDPI
 │   ├── updater.py          # Авто-проверка обновлений через GitHub Releases
-│   ├── autostart.py        # Автозапуск Windows (HKCU\…\Run)
+│   ├── autostart.py        # Автозапуск Windows (Планировщик заданий, с правами админа)
 │   ├── tray.py             # Системный трей (pystray)
 │   ├── dpi_test.py         # TLS-handshake тестер
 │   ├── ui_dpitest.py       # Окно «Проверить обход»

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import tkinter as tk
 from typing import Optional
@@ -38,11 +39,22 @@ class App(tk.Tk):
         self._tray: Optional[TrayController] = None
         self._quitting = False
 
+        # запуск свёрнутым: прячем окно СРАЗУ, до первой отрисовки, чтобы оно
+        # не успело мелькнуть на экране (--minimized в argv или настройка).
+        self._start_minimized = bool(self.ctl.cfg.get("start_minimized", False)) or (
+            "--minimized" in sys.argv[1:]
+        )
+
         self.title("EXDPI")
         self.configure(bg=THEME.bg)
         self.resizable(True, True)
         self.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
         self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        if self._start_minimized:
+            try:
+                self.withdraw()
+            except Exception:
+                pass
         self._center_on_screen()
 
         try:
@@ -81,17 +93,30 @@ class App(tk.Tk):
         except Exception:
             log.exception("autostart sync failed")
 
-        # tray-иконка: запускаем, если включено сворачивание в трей или
-        # запуск свёрнутым — иначе она просто не нужна
-        if self.ctl.cfg.get("minimize_to_tray", True) or self.ctl.cfg.get("start_minimized", False):
-            self._init_tray()
-
-        # уведомления Windows — по настройке
+        # уведомления Windows — по настройке (ставим ДО трея, чтобы тосты
+        # сразу шли через иконку трея)
         notify.set_enabled(bool(self.ctl.cfg.get("notifications_enabled", True)))
 
-        # запуск свёрнутым: окно прячется сразу, tray уже есть
-        if self.ctl.cfg.get("start_minimized", False) and self._tray is not None:
-            self.after(150, self.withdraw)
+        # tray-иконка: нужна для сворачивания в трей, запуска свёрнутым и
+        # для нативных тостов-уведомлений (Shell_NotifyIcon). Поднимаем, если
+        # включена хотя бы одна из этих функций.
+        if (
+            self.ctl.cfg.get("minimize_to_tray", True)
+            or self._start_minimized
+            or self.ctl.cfg.get("notifications_enabled", True)
+        ):
+            self._init_tray()
+
+        # запуск свёрнутым: окно уже withdraw()-нуто в начале __init__.
+        # Если трей не поднялся — окно потерялось бы, поэтому показываем его
+        # свёрнутым в панель задач (iconify) как запасной вариант.
+        if self._start_minimized:
+            if self._tray is None:
+                try:
+                    self.deiconify()
+                    self.iconify()
+                except Exception:
+                    pass
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -214,13 +239,17 @@ class App(tk.Tk):
         self.tg_lbl.pack(pady=(2, 0))
         self.tg_lbl.bind("<Button-1>", lambda _e: self._open_tg_guide())
 
-        # подпись с текущим режимом zapret — обычный/гейминг
+        # подпись-переключатель текущего режима zapret — обычный/гейминг.
+        # Клик по ней мгновенно меняет режим (и перезапускает обход, если он
+        # включён) — это «плашка» режима прямо на главном экране.
         self.mode_lbl = tk.Label(
             toggle_box, text="",
             fg=THEME.text_muted, bg=THEME.bg,
             font=(THEME.font_ui, 8, "bold"),
+            cursor="hand2",
         )
         self.mode_lbl.pack(pady=(6, 0))
+        self.mode_lbl.bind("<Button-1>", lambda _e: self._cycle_game_mode())
 
         # ── footer ──────────────────────────────────────────────────
         footer = tk.Frame(outer, bg=THEME.bg)
@@ -261,7 +290,8 @@ class App(tk.Tk):
         self.info_lbl.configure(text=f"mtproto · {host}:{port}")
 
         mode = str(cfg.get("game_mode", "normal"))
-        mode_text = "режим: гейминг" if mode == "gaming" else "режим: обычный"
+        mode_name = "гейминг" if mode == "gaming" else "обычный"
+        mode_text = f"режим: {mode_name} · сменить"
         try:
             self.mode_lbl.configure(text=mode_text)
         except Exception:
@@ -324,16 +354,16 @@ class App(tk.Tk):
             log.exception("error toast failed")
 
     # ── interactions ─────────────────────────────────────────────────
+    def _enabled_notify_text(self) -> str:
+        """Текст уведомления об успешном включении (с указанием режима)."""
+        mode = str(self.ctl.cfg.get("game_mode", "normal"))
+        mode_ru = "гейминг" if mode == "gaming" else "обычный"
+        return f"Обход включён · режим: {mode_ru}"
+
     def _on_toggle(self, value: bool) -> None:
         self._error_text = None
         self.toggle.set_busy(True)
         self.status_lbl.configure(text="…", fg=THEME.text_secondary)
-
-        hidden = False
-        try:
-            hidden = self.state() == "withdrawn"
-        except Exception:
-            pass
 
         def _work():
             try:
@@ -341,16 +371,25 @@ class App(tk.Tk):
                     self.ctl.start()
                 else:
                     self.ctl.stop()
-                if hidden:
-                    notify.send("Обход включён" if value else "Обход выключен")
+            except Exception:
+                log.exception("toggle work failed")
             finally:
-                self.after(0, self._after_toggle)
+                self.after(0, lambda: self._after_toggle(value))
 
         threading.Thread(target=_work, daemon=True, name="toggle-work").start()
 
-    def _after_toggle(self) -> None:
+    def _after_toggle(self, value: bool) -> None:
         self.toggle.set_busy(False)
         self._refresh_status_text()
+        # уведомление о результате (ошибку уже показал _on_error)
+        try:
+            if value:
+                if not self._error_text and self.ctl.is_on():
+                    notify.send(self._enabled_notify_text())
+            else:
+                notify.send("Обход выключен")
+        except Exception:
+            log.exception("toggle notify failed")
 
     # ── update check ─────────────────────────────────────────────────
     def _schedule_update_check(self) -> None:
@@ -397,9 +436,15 @@ class App(tk.Tk):
                 autostart.apply(bool(new_cfg.get("autostart_with_windows", False)))
             except Exception:
                 log.exception("autostart apply failed")
-            # tray: если включено сворачивание/старт-в-трей, а иконки ещё нет — поднять
-            want_tray = bool(new_cfg.get("minimize_to_tray", True)) or \
-                bool(new_cfg.get("start_minimized", False))
+            # уведомления — ставим раньше трея, чтобы тосты шли через иконку
+            notify.set_enabled(bool(new_cfg.get("notifications_enabled", True)))
+            # tray: нужен для сворачивания, старта свёрнутым и тостов — поднять,
+            # если включена хотя бы одна из функций, а иконки ещё нет
+            want_tray = (
+                bool(new_cfg.get("minimize_to_tray", True))
+                or bool(new_cfg.get("start_minimized", False))
+                or bool(new_cfg.get("notifications_enabled", True))
+            )
             if want_tray and self._tray is None:
                 self._init_tray()
             # тема меняется на месте — пересобираем основной UI
@@ -407,16 +452,21 @@ class App(tk.Tk):
             if new_theme != prev_theme:
                 apply_theme(new_theme)
                 self._rebuild_ui()
-            # режим (обычный/гейминг) применяется только после перезапуска zapret
+            # режим (обычный/гейминг) применяется при перезапуске zapret ниже
             new_mode = str(new_cfg.get("game_mode", "normal"))
-            if was_on and new_mode != prev_mode:
-                # restart ниже подхватит новое значение из cfg
-                pass
-            # уведомления
-            notify.set_enabled(bool(new_cfg.get("notifications_enabled", True)))
             if was_on:
                 self.ctl.restart_with_new_config()
             self._refresh_status_text()
+            # уведомление о применённых настройках
+            try:
+                if was_on and not self._error_text and self.ctl.is_on():
+                    if new_mode != prev_mode:
+                        mode_ru = "гейминг" if new_mode == "gaming" else "обычный"
+                        notify.send(f"Режим: {mode_ru} · обход перезапущен")
+                    else:
+                        notify.send("Настройки применены · обход перезапущен")
+            except Exception:
+                log.exception("settings notify failed")
 
         SettingsWindow(
             self, self.ctl.cfg, on_save=_on_save,
@@ -532,24 +582,68 @@ class App(tk.Tk):
         self._on_toggle(value)
 
     def _tray_set_strategy(self, strategy: str) -> None:
+        if str(self.ctl.cfg.get("zapret_strategy", "")) == strategy:
+            return
         self.ctl.cfg["zapret_strategy"] = strategy
         self.ctl.save()
         if self.ctl.is_on():
-            threading.Thread(
-                target=self.ctl.restart_with_new_config,
-                daemon=True, name="tray-strategy-restart",
-            ).start()
-        self._refresh_status_text()
+            def _restart():
+                try:
+                    self.ctl.restart_with_new_config()
+                except Exception:
+                    log.exception("strategy restart failed")
+                finally:
+                    self.after(0, lambda: (
+                        self._refresh_status_text(),
+                        notify.send("Стратегия обновлена · обход перезапущен")
+                        if not self._error_text and self.ctl.is_on() else None,
+                    ))
+            threading.Thread(target=_restart, daemon=True, name="strategy-restart").start()
+        else:
+            self._refresh_status_text()
 
     def _tray_set_mode(self, mode: str) -> None:
+        self._set_game_mode(mode)
+
+    def _cycle_game_mode(self) -> None:
+        """Переключить режим запрета normal ↔ gaming кликом по плашке."""
+        cur = str(self.ctl.cfg.get("game_mode", "normal"))
+        self._set_game_mode("normal" if cur == "gaming" else "gaming")
+
+    def _set_game_mode(self, mode: str) -> None:
+        """Сменить game_mode, сохранить и перезапустить обход (если включён),
+        с уведомлением о результате. Используется плашкой, треем и мастером."""
+        if mode not in ("normal", "gaming"):
+            return
+        if str(self.ctl.cfg.get("game_mode", "normal")) == mode:
+            return
         self.ctl.cfg["game_mode"] = mode
         self.ctl.save()
+        mode_ru = "гейминг" if mode == "gaming" else "обычный"
         if self.ctl.is_on():
-            threading.Thread(
-                target=self.ctl.restart_with_new_config,
-                daemon=True, name="tray-mode-restart",
-            ).start()
+            self._error_text = None
+            def _restart():
+                try:
+                    self.ctl.restart_with_new_config()
+                except Exception:
+                    log.exception("mode restart failed")
+                finally:
+                    self.after(0, lambda: self._after_mode_change(mode_ru))
+            threading.Thread(target=_restart, daemon=True, name="mode-restart").start()
+        else:
+            try:
+                notify.send(f"Режим переключён: {mode_ru}")
+            except Exception:
+                pass
+            self._refresh_status_text()
+
+    def _after_mode_change(self, mode_ru: str) -> None:
         self._refresh_status_text()
+        try:
+            if not self._error_text and self.ctl.is_on():
+                notify.send(f"Режим: {mode_ru} · обход перезапущен")
+        except Exception:
+            log.exception("mode notify failed")
 
     def _tray_open_dpitest(self) -> None:
         self._show_from_tray()
@@ -581,7 +675,11 @@ class App(tk.Tk):
             except Exception:
                 log.exception("autostart apply failed")
             notify.set_enabled(bool(self.ctl.cfg.get("notifications_enabled", True)))
-            want_tray = bool(self.ctl.cfg.get("minimize_to_tray", True)) or                 bool(self.ctl.cfg.get("start_minimized", False))
+            want_tray = (
+                bool(self.ctl.cfg.get("minimize_to_tray", True))
+                or bool(self.ctl.cfg.get("start_minimized", False))
+                or bool(self.ctl.cfg.get("notifications_enabled", True))
+            )
             if want_tray and self._tray is None:
                 self._init_tray()
             # тема могла меняться живьём в мастере — применяем и пересобираем всегда
@@ -632,16 +730,23 @@ class App(tk.Tk):
             pass
 
     def _on_close(self) -> None:
-        # если включено сворачивание в трей и tray работает — прячем окно
-        if (
-            self._tray is not None
-            and bool(self.ctl.cfg.get("minimize_to_tray", True))
-            and not self._quitting
-        ):
+        # если включено сворачивание в трей — не закрываем приложение
+        if bool(self.ctl.cfg.get("minimize_to_tray", True)) and not self._quitting:
+            # трей мог не подняться (например, pystray недоступен) — пробуем
+            # поднять его лениво, чтобы окно не «потерялось» без иконки.
+            if self._tray is None:
+                self._init_tray()
+            if self._tray is not None:
+                try:
+                    self.withdraw()
+                except Exception:
+                    log.exception("withdraw failed")
+                return
+            # трея так и нет — сворачиваем в панель задач, окно не теряется
             try:
-                self.withdraw()
+                self.iconify()
+                return
             except Exception:
-                log.exception("withdraw failed")
-            return
+                log.exception("iconify fallback failed")
         # иначе — обычный полный выход
         self._quit_app()

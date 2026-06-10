@@ -920,7 +920,8 @@ class SettingsWindow(tk.Toplevel):
         # автозапуск с Windows
         self._autostart = _CheckRow(
             body, "Запускать с Windows",
-            "Добавить EXDPI в автозагрузку Windows (HKCU\\…\\Run).",
+            "Автозапуск при входе в систему через Планировщик заданий — "
+            "сразу с правами администратора, без запроса UAC.",
             bool(self.cfg.get("autostart_with_windows", False)),
         )
         self._autostart.pack(fill="x", pady=(0, 8))

@@ -1,6 +1,6 @@
 # EXDPI — zapret + tg-ws-proxy в одном окне
 
-![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&logo=github&label=Скачивания&color=brightgreen)
+![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total)
 
 Автор сборки: **Exempale**. Логика обхода и прокси целиком взята из оригинальных
 репозиториев основных авторов — этот проект только объединяет их в один GUI.

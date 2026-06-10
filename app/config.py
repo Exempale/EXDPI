@@ -160,7 +160,11 @@ DEFAULT: Dict[str, Any] = {
 
     # zapret
     "zapret_enabled": True,
+    # имя general*.bat либо спец-значение "auto" (см. strategy_auto.py)
     "zapret_strategy": "general (ALT10).bat",
+    # результат последнего авто-подбора стратегии (имя .bat) — используется,
+    # когда zapret_strategy == "auto"
+    "zapret_strategy_auto_result": "",
     # «Свои домены» по умолчанию пустые — пользователь сам наполняет список,
     # либо переключается на один из готовых пресетов (см. domain_preset).
     "custom_domains": [],
@@ -170,6 +174,16 @@ DEFAULT: Dict[str, Any] = {
     # режим работы zapret: обычный или игровой (см. GAME_MODES выше).
     "game_mode": "normal",
 
+    # защищённый DNS (DoH/DoT) — см. app/securedns.py
+    "securedns_enabled": False,
+    # протокол: "doh" (DNS-over-HTTPS) или "dot" (DNS-over-TLS)
+    "securedns_protocol": "doh",
+    # провайдер: cloudflare / google / quad9 / adguard
+    "securedns_provider": "cloudflare",
+    # прописывать 127.0.0.1 системным DNS при включении (с бэкапом и
+    # восстановлением прежних настроек при выключении)
+    "securedns_set_system": True,
+
     # general
     "autostart_with_windows": False,
     # сворачивать в трей по крестику окна (вместо выхода)
@@ -178,6 +192,10 @@ DEFAULT: Dict[str, Any] = {
     "start_minimized": False,
     # тема оформления интерфейса (см. app/theme.py: dark / light)
     "theme": "dark",
+    # уведомления Windows (вкл/выкл обхода, ошибки, обновления)
+    "notifications_enabled": True,
+    # пройден ли анимированный мастер первого запуска (app/ui_wizard.py)
+    "wizard_done": False,
 
     # авто-проверка обновлений: timestamp (sec since epoch), до которого
     # не показывать диалог (после клика «пропустить обновление» = +3 дня)
@@ -202,6 +220,16 @@ def load() -> Dict[str, Any]:
         cfg["game_mode"] = "normal"
     if not isinstance(cfg.get("theme"), str) or cfg["theme"] not in ("dark", "light"):
         cfg["theme"] = "dark"
+    if cfg.get("securedns_protocol") not in ("doh", "dot"):
+        cfg["securedns_protocol"] = "doh"
+    if not isinstance(cfg.get("securedns_provider"), str) or not cfg["securedns_provider"]:
+        cfg["securedns_provider"] = "cloudflare"
+    for bool_key in ("securedns_enabled", "securedns_set_system",
+                     "notifications_enabled", "wizard_done"):
+        if not isinstance(cfg.get(bool_key), bool):
+            cfg[bool_key] = bool(DEFAULT[bool_key])
+    if not isinstance(cfg.get("zapret_strategy_auto_result"), str):
+        cfg["zapret_strategy_auto_result"] = ""
     return cfg
 
 

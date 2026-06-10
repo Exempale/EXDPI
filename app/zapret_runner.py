@@ -8,8 +8,6 @@ import shlex
 import subprocess
 import sys
 import threading
-import time
-from pathlib import Path
 from typing import Callable, List, Optional
 
 from . import paths
@@ -184,7 +182,9 @@ class ZapretRunner:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._strategy: Optional[str] = None
-        self._err_fp = None  # type: ignore[var-annotated]
+        # последние строки вывода winws.exe — для диагностики rc != 0
+        self._out_tail: List[str] = []
+        self._tail_lock = threading.Lock()
 
     @property
     def is_running(self) -> bool:
@@ -221,24 +221,15 @@ class ZapretRunner:
                 raise RuntimeError(f"winws.exe не найден: {winws}")
 
             cmd = [str(winws), *args]
-            log.info("zapret start: %s", strategy)
+            log.info("zapret start: %s (game_mode=%s)", strategy, game_mode)
             log.debug("argv: %s", cmd)
 
-            # Перенаправляем stderr winws.exe в файл рядом с config.json —
-            # без этого rc=1 диагностировать невозможно.
-            try:
-                from .config import app_dir
-                err_log_path = app_dir() / "winws-stderr.log"
-                err_log_path.parent.mkdir(parents=True, exist_ok=True)
-                # truncate
-                self._err_fp = open(err_log_path, "w", encoding="utf-8", errors="replace")
-            except Exception:
-                self._err_fp = None
-
+            # stdout+stderr winws.exe идут в logs/winws.log через reader-поток
+            # (см. _pump_output) — без этого rc=1 диагностировать невозможно.
             kw: dict = dict(
                 cwd=str(paths.zapret_bin()),
-                stdout=subprocess.DEVNULL,
-                stderr=self._err_fp if self._err_fp else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
             )
             if sys.platform == "win32":
@@ -250,13 +241,16 @@ class ZapretRunner:
                 self._proc = subprocess.Popen(cmd, **kw)
             except Exception as exc:
                 log.error("zapret launch failed: %s", exc)
-                if self._err_fp:
-                    try:
-                        self._err_fp.close()
-                    except Exception:
-                        pass
-                    self._err_fp = None
                 raise
+
+            with self._tail_lock:
+                self._out_tail = []
+            threading.Thread(
+                target=self._pump_output,
+                args=(self._proc,),
+                daemon=True,
+                name="winws-log",
+            ).start()
 
             self._strategy = strategy
 
@@ -265,32 +259,65 @@ class ZapretRunner:
                 target=self._wait, args=(on_exit,), daemon=True, name="zapret-wait",
             ).start()
 
+    def _pump_output(self, proc: subprocess.Popen) -> None:
+        """Читает stdout/stderr winws.exe построчно и пишет в logs/winws.log.
+
+        Хвост вывода (последние строки) дополнительно копится в памяти,
+        чтобы при rc != 0 показать его в общем логе без чтения файла.
+        """
+        try:
+            from .logs import winws_logger
+            wlog = winws_logger()
+        except Exception:
+            wlog = log
+
+        stream = proc.stdout
+        if stream is None:
+            return
+        wlog.info("─── winws.exe session start (pid=%s) ───", proc.pid)
+        try:
+            for raw in iter(stream.readline, b""):
+                line = ""
+                for enc in ("utf-8", "cp866", "cp1251"):
+                    try:
+                        line = raw.decode(enc).rstrip("\r\n")
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                else:
+                    line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not line.strip():
+                    continue
+                wlog.info("%s", line)
+                with self._tail_lock:
+                    self._out_tail.append(line)
+                    if len(self._out_tail) > 40:
+                        self._out_tail = self._out_tail[-40:]
+        except Exception:
+            log.exception("winws output pump failed")
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+            wlog.info("─── winws.exe session end ───")
+
+    def last_output_tail(self, lines: int = 10) -> List[str]:
+        """Последние строки вывода winws.exe текущей/прошлой сессии."""
+        with self._tail_lock:
+            return list(self._out_tail[-lines:])
+
     def _wait(self, on_exit: Callable[[int], None]) -> None:
         try:
             rc = self._proc.wait() if self._proc else 0  # type: ignore[union-attr]
         except Exception:
             rc = -1
-        # закрыть stderr-файл и при rc != 0 вытащить хвост в общий лог
-        try:
-            if self._err_fp:
-                self._err_fp.flush()
-                self._err_fp.close()
-        except Exception:
-            pass
-        self._err_fp = None
         if rc != 0:
-            try:
-                from .config import app_dir
-                err_path = app_dir() / "winws-stderr.log"
-                if err_path.exists():
-                    text = err_path.read_text(encoding="utf-8", errors="replace")
-                    tail = text.strip().splitlines()[-10:]
-                    if tail:
-                        log.error("winws.exe stderr (last %d lines):", len(tail))
-                        for line in tail:
-                            log.error("  %s", line)
-            except Exception:
-                pass
+            tail = self.last_output_tail(10)
+            if tail:
+                log.error("winws.exe output (last %d lines):", len(tail))
+                for line in tail:
+                    log.error("  %s", line)
         try:
             on_exit(rc)
         except Exception:

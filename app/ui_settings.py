@@ -7,8 +7,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
 
-from . import paths, presets
+from . import logs, presets, paths, securedns, settings_io
 from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
+from .strategy_auto import AUTO_STRATEGY_ID, AUTO_STRATEGY_LABEL, is_auto
 from .theme import THEME, available_themes, label_for as theme_label_for
 from .widgets import IconButton
 from .zapret_runner import list_strategies
@@ -177,6 +178,9 @@ class _Select(tk.Frame):
 
     def get(self) -> str:
         return self._var.get()
+
+    def set(self, value: str) -> None:
+        self._var.set(value)
 
 
 class _DomainsBox(tk.Frame):
@@ -622,10 +626,19 @@ class SettingsWindow(tk.Toplevel):
     WIDTH = 800
     HEIGHT = 630
 
-    def __init__(self, master: tk.Tk, cfg: Dict[str, Any], on_save: Callable[[Dict[str, Any]], None]) -> None:
+    def __init__(
+        self,
+        master: tk.Tk,
+        cfg: Dict[str, Any],
+        on_save: Callable[[Dict[str, Any]], None],
+        controller=None,
+        on_run_wizard: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__(master)
         self.cfg = dict(cfg)
         self.on_save = on_save
+        self._controller = controller
+        self._on_run_wizard = on_run_wizard
         # mousewheel binding tag, чтобы корректно отвязать на close
         self._wheel_bind: Optional[str] = None
 
@@ -787,13 +800,31 @@ class SettingsWindow(tk.Toplevel):
         self._bind_wheel_recursive = _bind_wheel_recursive
         self._bind_wheel_recursive(self)
 
-        # zapret strategy
+        # zapret strategy (+ спец-пункт «Авто»)
+        strategy_value = str(self.cfg.get("zapret_strategy", "general (ALT10).bat"))
+        strategy_display = AUTO_STRATEGY_LABEL if is_auto(strategy_value) else strategy_value
         self._strategy = _Select(
             body, "Стратегия обхода (zapret)",
-            list_strategies(),
-            self.cfg.get("zapret_strategy", "general (ALT10).bat"),
+            [AUTO_STRATEGY_LABEL] + list_strategies(),
+            strategy_display,
         )
-        self._strategy.pack(fill="x", pady=(0, 14))
+        self._strategy.pack(fill="x", pady=(0, 2))
+        auto_row = tk.Frame(body, bg=THEME.bg)
+        auto_row.pack(fill="x", pady=(0, 14))
+        self._auto_hint = tk.Label(
+            auto_row,
+            text=self._auto_result_hint(),
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8), anchor="w",
+        )
+        self._auto_hint.pack(side="left")
+        auto_link = tk.Label(
+            auto_row, text="подобрать автоматически",
+            fg=THEME.accent_dim, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "underline"), cursor="hand2",
+        )
+        auto_link.pack(side="right")
+        auto_link.bind("<Button-1>", lambda _e: self._open_autostrategy())
 
         # режим работы запрета (обычный вс игровой)
         self._game_mode = _ModePicker(
@@ -903,6 +934,55 @@ class SettingsWindow(tk.Toplevel):
         )
         self._start_min.pack(fill="x", pady=(0, 8))
 
+        # уведомления Windows
+        self._notify = _CheckRow(
+            body, "Уведомления Windows",
+            "Тосты о включении/выключении обхода, ошибках и обновлениях.",
+            bool(self.cfg.get("notifications_enabled", True)),
+        )
+        self._notify.pack(fill="x", pady=(0, 8))
+
+        # ── разделитель: защищённый DNS ─────────────────────────────
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
+
+        self._securedns_on = _CheckRow(
+            body, "Защищённый DNS (DoH/DoT)",
+            "Локальный DNS на 127.0.0.1: запросы к провайдеру шифруются, "
+            "DPI не видит и не подменяет их. Включается вместе с обходом.",
+            bool(self.cfg.get("securedns_enabled", False)),
+        )
+        self._securedns_on.pack(fill="x", pady=(0, 8))
+
+        self._dns_proto_labels = {
+            "doh": "DoH — DNS-over-HTTPS (порт 443)",
+            "dot": "DoT — DNS-over-TLS (порт 853)",
+        }
+        proto_value = str(self.cfg.get("securedns_protocol", "doh"))
+        self._dns_proto = _Select(
+            body, "Протокол защищённого DNS",
+            list(self._dns_proto_labels.values()),
+            self._dns_proto_labels.get(proto_value, self._dns_proto_labels["doh"]),
+        )
+        self._dns_proto.pack(fill="x", pady=(0, 10))
+
+        self._dns_provider_labels = securedns.provider_labels()
+        provider_value = str(self.cfg.get("securedns_provider", "cloudflare"))
+        self._dns_provider = _Select(
+            body, "DNS-провайдер",
+            list(self._dns_provider_labels.values()),
+            self._dns_provider_labels.get(provider_value,
+                                          self._dns_provider_labels["cloudflare"]),
+        )
+        self._dns_provider.pack(fill="x", pady=(0, 10))
+
+        self._dns_system = _CheckRow(
+            body, "Назначать системным DNS",
+            "При включении прописывает 127.0.0.1 на активные адаптеры "
+            "(старые DNS сохраняются и восстанавливаются при выключении).",
+            bool(self.cfg.get("securedns_set_system", True)),
+        )
+        self._dns_system.pack(fill="x", pady=(0, 8))
+
         # ── разделитель ─────────────────────────────────────────────
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
@@ -913,6 +993,31 @@ class SettingsWindow(tk.Toplevel):
             value=str(self.cfg.get("theme", "dark")),
         )
         self._theme.pack(fill="x", pady=(0, 8))
+
+        # ── разделитель: сервис ─────────────────────────────────────
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
+
+        tk.Label(
+            body, text="СЕРВИС",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"), anchor="w",
+        ).pack(fill="x", pady=(0, 6))
+
+        def _service_link(text: str, handler: Callable[[], None]) -> None:
+            lbl = tk.Label(
+                body, text=text,
+                fg=THEME.accent_dim, bg=THEME.bg,
+                font=(THEME.font_ui, 10, "underline"),
+                cursor="hand2", anchor="w",
+            )
+            lbl.pack(fill="x", pady=(0, 6))
+            lbl.bind("<Button-1>", lambda _e: handler())
+
+        _service_link("открыть папку с логами", self._open_logs)
+        _service_link("экспортировать настройки…", self._export_settings)
+        _service_link("импортировать настройки…", self._import_settings)
+        if self._on_run_wizard is not None:
+            _service_link("мастер первого запуска", self._run_wizard)
 
         # небольшой отступ снизу скролла, чтобы последний пункт не липал
         # к разделителю над футером
@@ -928,18 +1033,29 @@ class SettingsWindow(tk.Toplevel):
     def _regen_secret(self) -> None:
         self._secret.set(os.urandom(16).hex())
 
-    def _save(self) -> None:
+    def _auto_result_hint(self) -> str:
+        res = str(self.cfg.get("zapret_strategy_auto_result", "") or "")
+        if res:
+            short = res[:-4] if res.endswith(".bat") else res
+            return f"последний авто-подбор: {short}"
+        return "«Авто» использует результат авто-подбора"
+
+    def _collect(self) -> Optional[Dict[str, Any]]:
+        """Собрать значения всех виджетов в dict (или None при ошибке)."""
         port_s = self._port.get()
         if not port_s.isdigit() or not (1 <= int(port_s) <= 65535):
             self._shake(self._port)
-            return
+            return None
         host = self._host.get()
         if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
             self._shake(self._host)
-            return
+            return None
 
         out = dict(self.cfg)
-        out["zapret_strategy"] = self._strategy.get()
+        strategy_sel = self._strategy.get()
+        out["zapret_strategy"] = (
+            AUTO_STRATEGY_ID if strategy_sel == AUTO_STRATEGY_LABEL else strategy_sel
+        )
         out["proxy_port"] = int(port_s)
         out["proxy_host"] = host
         out["proxy_secret"] = self._secret.get() or os.urandom(16).hex()
@@ -952,9 +1068,93 @@ class SettingsWindow(tk.Toplevel):
         out["minimize_to_tray"] = self._tray.get()
         out["start_minimized"] = self._start_min.get()
         out["theme"] = self._theme.get()
+        out["notifications_enabled"] = self._notify.get()
+        out["securedns_enabled"] = self._securedns_on.get()
+        proto_rev = {v: k for k, v in self._dns_proto_labels.items()}
+        out["securedns_protocol"] = proto_rev.get(self._dns_proto.get(), "doh")
+        provider_rev = {v: k for k, v in self._dns_provider_labels.items()}
+        out["securedns_provider"] = provider_rev.get(self._dns_provider.get(), "cloudflare")
+        out["securedns_set_system"] = self._dns_system.get()
+        return out
 
+    def _save(self) -> None:
+        out = self._collect()
+        if out is None:
+            return
         self.on_save(out)
         self.destroy()
+
+    # ── сервис ──────────────────────────────────────────────────────
+    def _open_logs(self) -> None:
+        if not logs.open_logs_folder():
+            messagebox.showerror("EXDPI", "Не удалось открыть папку с логами.", parent=self)
+
+    def _export_settings(self) -> None:
+        out = self._collect()
+        if out is None:
+            messagebox.showerror(
+                "EXDPI", "Исправьте подсвеченные поля перед экспортом.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Экспорт настроек EXDPI",
+            initialfile=settings_io.default_export_filename(),
+            defaultextension=".json",
+            filetypes=[("Настройки EXDPI", "*.json"), ("Все файлы", "*.*")],
+        )
+        if not path:
+            return
+        if settings_io.export_settings(out, path):
+            messagebox.showinfo("EXDPI", "Настройки экспортированы.", parent=self)
+        else:
+            messagebox.showerror("EXDPI", "Не удалось сохранить файл.", parent=self)
+
+    def _import_settings(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Импорт настроек EXDPI",
+            filetypes=[("Настройки EXDPI", "*.json"), ("Все файлы", "*.*")],
+        )
+        if not path:
+            return
+        result = settings_io.import_settings(path)
+        if not result.ok:
+            messagebox.showerror("EXDPI", f"Импорт не удался: {result.error}", parent=self)
+            return
+        self.cfg.update(result.applied)
+        # пересобрать окно с новыми значениями
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
+        note = f"Загружено настроек: {result.applied_count}."
+        if result.skipped:
+            note += f" Пропущено (битые/незнакомые): {len(result.skipped)}."
+        note += "\nНажмите «сохранить», чтобы применить."
+        messagebox.showinfo("EXDPI", note, parent=self)
+
+    def _run_wizard(self) -> None:
+        cb = self._on_run_wizard
+        self.destroy()
+        if cb is not None:
+            cb()
+
+    def _open_autostrategy(self) -> None:
+        if self._controller is None:
+            messagebox.showinfo(
+                "EXDPI", "Авто-подбор недоступен в этом окне.", parent=self)
+            return
+        from .ui_autostrategy import AutoStrategyDialog
+
+        def _on_applied(strategy: str) -> None:
+            self.cfg["zapret_strategy"] = AUTO_STRATEGY_ID
+            self.cfg["zapret_strategy_auto_result"] = strategy
+            try:
+                self._strategy.set(AUTO_STRATEGY_LABEL)
+                self._auto_hint.configure(text=self._auto_result_hint())
+            except Exception:
+                pass
+
+        AutoStrategyDialog(self, self._controller, on_applied=_on_applied)
 
     def _cancel(self) -> None:
         self.destroy()

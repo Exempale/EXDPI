@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from typing import Optional
 
-from . import __version__, autostart, paths
+from . import __version__, autostart, logs, notify, paths
 from .config import save as save_config
 from .controller import Controller
 from .theme import THEME, apply_theme, available_themes
@@ -14,6 +14,7 @@ from .tray import TrayController
 from .ui_dpitest import DpiTestDialog
 from .ui_settings import SettingsWindow
 from .ui_tg_guide import TgVcGuideDialog
+from .ui_wizard import FirstRunWizard
 from .updater import UpdateDialog, check_async, snooze_for_three_days
 from .widgets import AnimatedToggle, IconButton, StatusDot
 
@@ -85,11 +86,18 @@ class App(tk.Tk):
         if self.ctl.cfg.get("minimize_to_tray", True) or self.ctl.cfg.get("start_minimized", False):
             self._init_tray()
 
+        # уведомления Windows — по настройке
+        notify.set_enabled(bool(self.ctl.cfg.get("notifications_enabled", True)))
+
         # запуск свёрнутым: окно прячется сразу, tray уже есть
         if self.ctl.cfg.get("start_minimized", False) and self._tray is not None:
             self.after(150, self.withdraw)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # мастер первого запуска — один раз
+        if not bool(self.ctl.cfg.get("wizard_done", False)):
+            self.after(400, self._open_wizard)
 
     # ── layout ───────────────────────────────────────────────────────
     def _center_on_screen(self) -> None:
@@ -256,6 +264,12 @@ class App(tk.Tk):
             self.status_lbl.configure(text="Отключено", fg=THEME.text_primary)
             self.dot.set_color(THEME.danger)
 
+        if self._tray is not None:
+            try:
+                self._tray.update_state()
+            except Exception:
+                pass
+
     def _schedule_stats_refresh(self) -> None:
         try:
             stats = self.ctl.proxy.stats_snapshot() if self.ctl.proxy.is_running else None
@@ -288,6 +302,10 @@ class App(tk.Tk):
             self._error_text = msg[:60]
             self._refresh_status_text()
         self.after(0, _apply)
+        try:
+            notify.send(f"Ошибка: {msg[:120]}")
+        except Exception:
+            log.exception("error toast failed")
 
     # ── interactions ─────────────────────────────────────────────────
     def _on_toggle(self, value: bool) -> None:
@@ -295,12 +313,20 @@ class App(tk.Tk):
         self.toggle.set_busy(True)
         self.status_lbl.configure(text="…", fg=THEME.text_secondary)
 
+        hidden = False
+        try:
+            hidden = self.state() == "withdrawn"
+        except Exception:
+            pass
+
         def _work():
             try:
                 if value:
                     self.ctl.start()
                 else:
                     self.ctl.stop()
+                if hidden:
+                    notify.send("Обход включён" if value else "Обход выключен")
             finally:
                 self.after(0, self._after_toggle)
 
@@ -334,6 +360,10 @@ class App(tk.Tk):
             except Exception:
                 log.exception("failed to persist update_skip_until")
         try:
+            notify.send(('Доступно обновление ' + str(info.get('tag', ''))).strip())
+        except Exception:
+            pass
+        try:
             UpdateDialog(self, info, on_skip=_on_skip)
         except Exception:
             log.exception("failed to show update dialog")
@@ -366,11 +396,16 @@ class App(tk.Tk):
             if was_on and new_mode != prev_mode:
                 # restart ниже подхватит новое значение из cfg
                 pass
+            # уведомления
+            notify.set_enabled(bool(new_cfg.get("notifications_enabled", True)))
             if was_on:
                 self.ctl.restart_with_new_config()
             self._refresh_status_text()
 
-        SettingsWindow(self, self.ctl.cfg, on_save=_on_save)
+        SettingsWindow(
+            self, self.ctl.cfg, on_save=_on_save,
+            controller=self.ctl, on_run_wizard=self._open_wizard,
+        )
 
     def _open_dpitest(self) -> None:
         try:
@@ -452,16 +487,98 @@ class App(tk.Tk):
             tray = TrayController(
                 icon_path=ico_png,
                 on_show=lambda: self.after(0, self._show_from_tray),
-                on_toggle=lambda: self.after(0, self._on_toggle),
+                on_toggle=lambda: self.after(0, self._tray_toggle),
                 on_quit=lambda: self.after(0, self._quit_app),
                 is_on_provider=lambda: self.ctl.is_on(),
+                cfg_provider=lambda: self.ctl.cfg,
+                on_strategy=lambda s: self.after(0, self._tray_set_strategy, s),
+                on_mode=lambda m: self.after(0, self._tray_set_mode, m),
+                on_dpitest=lambda: self.after(0, self._tray_open_dpitest),
+                on_logs=lambda: self.after(0, self._tray_open_logs),
+                on_settings=lambda: self.after(0, self._tray_open_settings),
             )
             if not tray.start():
                 log.info("tray controller did not start")
                 return
             self._tray = tray
+            notify.register_tray(tray)
         except Exception:
             log.exception("tray init failed")
+
+    def _tray_toggle(self) -> None:
+        """Переключение из трея: инвертируем текущее состояние и синхронизируем
+        большой переключатель в окне."""
+        value = not self.ctl.is_on()
+        try:
+            self.toggle.set(value, animate=False)
+        except Exception:
+            pass
+        self._on_toggle(value)
+
+    def _tray_set_strategy(self, strategy: str) -> None:
+        self.ctl.cfg["zapret_strategy"] = strategy
+        self.ctl.save()
+        if self.ctl.is_on():
+            threading.Thread(
+                target=self.ctl.restart_with_new_config,
+                daemon=True, name="tray-strategy-restart",
+            ).start()
+        self._refresh_status_text()
+
+    def _tray_set_mode(self, mode: str) -> None:
+        self.ctl.cfg["game_mode"] = mode
+        self.ctl.save()
+        if self.ctl.is_on():
+            threading.Thread(
+                target=self.ctl.restart_with_new_config,
+                daemon=True, name="tray-mode-restart",
+            ).start()
+        self._refresh_status_text()
+
+    def _tray_open_dpitest(self) -> None:
+        self._show_from_tray()
+        self._open_dpitest()
+
+    def _tray_open_logs(self) -> None:
+        try:
+            logs.open_logs_folder()
+        except Exception:
+            log.exception("open logs folder failed")
+
+    def _tray_open_settings(self) -> None:
+        self._show_from_tray()
+        self._open_settings()
+
+    # ── мастер первого запуска ──────────────────────────────────────
+    def _open_wizard(self) -> None:
+        try:
+            self._show_from_tray()
+        except Exception:
+            pass
+
+        def _on_finish(data: dict) -> None:
+            prev_theme = str(self.ctl.cfg.get("theme", "dark"))
+            self.ctl.cfg.update(data)
+            self.ctl.save()
+            try:
+                autostart.apply(bool(self.ctl.cfg.get("autostart_with_windows", False)))
+            except Exception:
+                log.exception("autostart apply failed")
+            notify.set_enabled(bool(self.ctl.cfg.get("notifications_enabled", True)))
+            want_tray = bool(self.ctl.cfg.get("minimize_to_tray", True)) or                 bool(self.ctl.cfg.get("start_minimized", False))
+            if want_tray and self._tray is None:
+                self._init_tray()
+            # тема могла меняться живьём в мастере — применяем и пересобираем всегда
+            apply_theme(str(self.ctl.cfg.get("theme", "dark")))
+            self._rebuild_ui()
+            if self.ctl.is_on():
+                self.ctl.restart_with_new_config()
+            self._refresh_status_text()
+
+        try:
+            FirstRunWizard(self, self.ctl.cfg, controller=self.ctl, on_finish=_on_finish)
+        except Exception:
+            log.exception("wizard failed")
 
     def _show_from_tray(self) -> None:
         try:
@@ -477,6 +594,7 @@ class App(tk.Tk):
         if self._quitting:
             return
         self._quitting = True
+        notify.unregister_tray()
         if self._tray is not None:
             try:
                 self._tray.stop()

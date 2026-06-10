@@ -136,20 +136,15 @@ def _show_crash_messagebox(exc: BaseException, log_path: Path) -> None:
 
 
 def _setup_logging() -> None:
+    """Логирование настраивается централизованно в app.logs (папка logs/
+    с ротацией: exdpi.log — приложение, winws.log — вывод winws.exe)."""
     import logging
     try:
-        from app.config import app_dir
-        d = app_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        log_path = d / "exdpi.log"
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
-            handlers=[logging.FileHandler(str(log_path), encoding="utf-8")],
-        )
+        from app.logs import setup as setup_logs
+        setup_logs()
     except Exception:
         logging.basicConfig(level=logging.INFO)
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
+        logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
 _SINGLE_INSTANCE_MUTEX = None  # глобал — мьютекс держим живым весь процесс

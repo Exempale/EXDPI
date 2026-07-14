@@ -15,49 +15,42 @@ EXDPI работает в двух режимах, переключаемых п
 
 ---
 
-## Скриншоты
+## Главное окно
+
+Большой переключатель ON/OFF, индикатор состояния, переключатель режима **DPI / VPN**
+и иконки темы (солнце/луна) и настроек. Доступны тёмная и светлая темы.
+
+### Режим DPI
 
 <table>
   <tr>
-    <td align="center"><b>Тёмная тема</b><br><img src="docs/screenshots/main-dark.png" width="280"></td>
-    <td align="center"><b>Светлая тема</b><br><img src="docs/screenshots/main-light.png" width="280"></td>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/main-dpi-dark.png" width="300"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/main-dpi-light.png" width="300"></td>
   </tr>
 </table>
 
-Главное окно: большой переключатель ON/OFF, индикатор состояния, переключатель
-режима DPI/VPN и текущий режим работы. Иконка солнца/луны в углу переключает
-тему (тёмная ↔ светлая), шестерёнка ведёт в настройки.
+В режиме DPI поднимаются zapret и локальный MTProto-прокси. Готовая `mtproto`-ссылка
+копируется одним кликом, есть кнопки «проверить обход» и «подключить прокси в Telegram».
 
-### Настройки — стратегия и режим запрета
+### Режим VPN
 
-<img src="docs/screenshots/settings-strategy-mode.png" width="420">
+Пока подписка не задана — список пуст:
 
-Тут же сегментный переключатель **«обычный / гейминг»** для zapret — он реально
-влияет на параметры `winws.exe` (`GameFilter*` = `1024-65535` в гейминг-режиме,
-`12` в обычном — см. [исходник стратегий][zapret-discord-youtube]).
+<table>
+  <tr>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/main-vpn-empty-dark.png" width="300"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/main-vpn-empty-light.png" width="300"></td>
+  </tr>
+</table>
 
-### Настройки — готовые конфиг-листы
+После импорта подписки подтягивается список локаций с флагами стран и названиями:
 
-<img src="docs/screenshots/settings-presets.png" width="420">
-
-Одним кликом подгружаются подборки доменов из `blocklists/` (Игры и стриминг,
-Социальные сети, Популярное в РФ) либо встроенные ИИ-сервисы. Выбранный пресет
-записывается в `list-general-user.txt` zapret при следующем включении.
-
-### Настройки — тема интерфейса
-
-<img src="docs/screenshots/settings-theme.png" width="420">
-
-Тему можно переключить и из настроек (Тёмная / Светлая). Применяется сразу
-после сохранения — без перезапуска приложения.
-
-### Инструкция по подключению к Telegram
-
-<img src="docs/screenshots/tg-guide.png" width="420">
-
-Кнопка «подключить прокси в Telegram» в главном окне открывает встроенную
-пошаговую инструкцию для Telegram Desktop и голосовых чатов (VC) — с готовыми
-параметрами вашего прокси и кнопкой «скопировать `tg://proxy`».
+<table>
+  <tr>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/main-vpn-servers-dark.png" width="300"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/main-vpn-servers-light.png" width="300"></td>
+  </tr>
+</table>
 
 ---
 
@@ -114,6 +107,48 @@ EXDPI работает в двух режимах, переключаемых п
 
 Если сервис лимитирует число устройств на подписку, при переходе на новый ПК
 привязку HWID может понадобиться сбросить на стороне сервиса.
+
+---
+
+## Настройки
+
+Окно настроек разбито на три вкладки — **DPI**, **VPN**, **Общее**.
+
+### Вкладка DPI — стратегия и режим запрета
+
+<table>
+  <tr>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/settings-dpi-dark.png" width="360"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/settings-dpi-light.png" width="360"></td>
+  </tr>
+</table>
+
+Выбор стратегии zapret (`general*.bat`), авто-подбор стратегии, сегментный
+переключатель **обычный / гейминг** (влияет на `GameFilter*` в `winws.exe`) и порт прокси.
+
+### Вкладка VPN — параметры туннеля
+
+<table>
+  <tr>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/settings-vpn-dark.png" width="360"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/settings-vpn-light.png" width="360"></td>
+  </tr>
+</table>
+
+DNS-провайдер в туннеле (DoH/DoT), сетевой стек TUN (Mixed рекомендуется) и MTU.
+Если после включения VPN пропадает интернет — стек **Mixed**, MTU **1500**, kill-switch off.
+
+### Вкладка Общее — система
+
+<table>
+  <tr>
+    <td align="center"><b>Тёмная</b><br><img src="docs/screenshots/settings-general-dark.png" width="360"></td>
+    <td align="center"><b>Светлая</b><br><img src="docs/screenshots/settings-general-light.png" width="360"></td>
+  </tr>
+</table>
+
+Автозапуск с Windows (через Планировщик заданий, сразу с правами админа, без UAC),
+сворачивание в трей по крестику, старт свёрнутым, уведомления Windows.
 
 ---
 
@@ -188,14 +223,9 @@ Telegram использует один и тот же прокси и для т�
 
 ## Темы оформления
 
-| Тема | Описание |
-|------|----------|
-| **Тёмная** | Стандартная (по умолчанию). |
-| **Светлая** | Для дневного использования и скриншотов. |
-
-Переключается иконкой «солнце/луна» в шапке главного окна или в настройках →
-«Тема интерфейса». Применяется сразу, без перезапуска. Текущий выбор сохраняется
-в `%APPDATA%\EXDPI\config.json`.
+Тёмная (по умолчанию) и светлая. Переключается иконкой «солнце/луна» в шапке
+главного окна или в настройках. Применяется сразу, без перезапуска. Текущий выбор
+сохраняется в `%APPDATA%\EXDPI\config.json`.
 
 ---
 

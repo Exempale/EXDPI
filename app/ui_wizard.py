@@ -1,8 +1,8 @@
 """Анимированный мастер первого запуска EXDPI.
 
 Показывается один раз (cfg["wizard_done"] = False) и проводит пользователя
-по шагам: приветствие → тема → домены → режим → стратегия (с авто-подбором)
-→ опции → финиш.
+по шагам: приветствие → режим приложения (DPI/VPN) → тема → домены → режим
+→ стратегия (с авто-подбором) → опции → финиш.
 
 Анимации без сторонних библиотек, на чистом Tk:
   * пульсирующие кольца вокруг логотипа на приветствии;
@@ -68,7 +68,7 @@ class FirstRunWizard(tk.Toplevel):
     WIDTH = 640
     HEIGHT = 560
 
-    STEP_COUNT = 7  # welcome, theme, domains, mode, strategy, options, finish
+    STEP_COUNT = 8  # welcome, app_mode, theme, domains, mode, strategy, options, finish
 
     def __init__(
         self,
@@ -90,6 +90,7 @@ class FirstRunWizard(tk.Toplevel):
 
         # выбранные значения (дефолты из конфига)
         self._data: Dict[str, Any] = {
+            "app_mode": str(cfg.get("app_mode", "dpi")),
             "theme": str(cfg.get("theme", "dark")),
             "domain_preset": str(cfg.get("domain_preset", "custom")) or "custom",
             "game_mode": str(cfg.get("game_mode", "normal")),
@@ -173,8 +174,14 @@ class FirstRunWizard(tk.Toplevel):
         )
         self._next_btn.pack(side="right")
         self._next_btn.bind("<Button-1>", lambda _e: self._next())
-        self._next_btn.bind("<Enter>", lambda _e: self._next_btn.configure(bg=THEME.accent_dim))
-        self._next_btn.bind("<Leave>", lambda _e: self._next_btn.configure(bg=THEME.accent))
+        self._next_btn.bind(
+            "<Enter>",
+            lambda _e: self._next_btn.configure(bg=THEME.accent_dim, padx=18, pady=9),
+        )
+        self._next_btn.bind(
+            "<Leave>",
+            lambda _e: self._next_btn.configure(bg=THEME.accent, padx=16, pady=8),
+        )
 
         self._back_btn = tk.Label(
             bottom, text="←  назад",
@@ -213,6 +220,10 @@ class FirstRunWizard(tk.Toplevel):
         r = 3
         gap = 18
         y = 5
+        try:
+            cv.create_line(8, y, 8 + (n - 1) * gap, y, fill=THEME.border, width=1)
+        except tk.TclError:
+            pass
         for i in range(n):
             x = 8 + i * gap
             # близость к активной позиции 0..1
@@ -245,7 +256,7 @@ class FirstRunWizard(tk.Toplevel):
     def _next(self) -> None:
         if self._animating or self._finished:
             return
-        if self._step == 4 and self._strategy_choice.get() == "auto" and not self._auto_done:
+        if self._step == 5 and self._strategy_choice.get() == "auto" and not self._auto_done:
             self._run_auto_strategy()
             return
         if self._step >= self.STEP_COUNT - 1:
@@ -299,9 +310,9 @@ class FirstRunWizard(tk.Toplevel):
 
     def _make_step(self, idx: int) -> tk.Frame:
         builders = [
-            self._step_welcome, self._step_theme, self._step_domains,
-            self._step_mode, self._step_strategy, self._step_options,
-            self._step_finish,
+            self._step_welcome, self._step_app_mode, self._step_theme,
+            self._step_domains, self._step_mode, self._step_strategy,
+            self._step_options, self._step_finish,
         ]
         frame = tk.Frame(self._stage, bg=THEME.bg)
         try:
@@ -419,8 +430,24 @@ class FirstRunWizard(tk.Toplevel):
             on_click()
             _refresh_all()
 
+        def _hover_in(_e):
+            for _w in (card, title_lbl, sub_lbl):
+                try:
+                    _w.configure(bg=THEME.card_hover)
+                except tk.TclError:
+                    pass
+
+        def _hover_out(_e):
+            for _w in (card, title_lbl, sub_lbl):
+                try:
+                    _w.configure(bg=THEME.card)
+                except tk.TclError:
+                    pass
+
         for w in (card, title_lbl, sub_lbl):
             w.bind("<Button-1>", _click)
+            w.bind("<Enter>", _hover_in, add="+")
+            w.bind("<Leave>", _hover_out, add="+")
             w.configure(cursor="hand2")
 
         if not hasattr(master, "_cards"):
@@ -429,9 +456,31 @@ class FirstRunWizard(tk.Toplevel):
         _refresh_all()
         return card
 
-    # 1 — тема
+    # 1 — режим работы приложения
+    def _step_app_mode(self, frame: tk.Frame) -> None:
+        self._heading(frame, "шаг 1 · режим работы", "Что вам нужно?",
+                      "Можно переключить в любой момент прямо в главном окне.")
+        box = tk.Frame(frame, bg=THEME.bg, padx=30)
+        box.pack(fill="x")
+        options = (
+            ("dpi", "Обход DPI",
+             "Разблокировка сайтов и сервисов через обход блокировок провайдера "
+             "(zapret/WinDivert). Не шифрует весь трафик."),
+            ("vpn", "VPN",
+             "Полноценный VPN-туннель через sing-box: по ссылке-подписке или "
+             "прямому VLESS/SS/VMess/Trojan/Hysteria2/TUIC."),
+        )
+        for mode_id, title, desc in options:
+            card = self._card_option(
+                box, title, desc,
+                selected=lambda m=mode_id: self._data["app_mode"] == m,
+                on_click=lambda m=mode_id: self._data.__setitem__("app_mode", m),
+            )
+            card.pack(fill="x", pady=(0, 10))
+
+    # 2 — тема
     def _step_theme(self, frame: tk.Frame) -> None:
-        self._heading(frame, "шаг 1 · оформление", "Выберите тему",
+        self._heading(frame, "шаг 2 · оформление", "Выберите тему",
                       "Применяется сразу. Потом можно переключить в один клик из главного окна.")
         box = tk.Frame(frame, bg=THEME.bg, padx=30)
         box.pack(fill="x")
@@ -454,9 +503,9 @@ class FirstRunWizard(tk.Toplevel):
         # пересобрать мастер в новой палитре, остаёмся на том же шаге
         self._build()
 
-    # 2 — домены
+    # 3 — домены
     def _step_domains(self, frame: tk.Frame) -> None:
-        self._heading(frame, "шаг 2 · домены", "Что разблокируем?",
+        self._heading(frame, "шаг 3 · домены", "Что разблокируем?",
                       "Готовый набор доменов для обхода. Свои домены можно добавить "
                       "позже в настройках.")
         box = tk.Frame(frame, bg=THEME.bg, padx=30)
@@ -471,9 +520,9 @@ class FirstRunWizard(tk.Toplevel):
             )
             card.pack(fill="x", pady=(0, 8))
 
-    # 3 — режим
+    # 4 — режим
     def _step_mode(self, frame: tk.Frame) -> None:
-        self._heading(frame, "шаг 3 · режим", "Режим обхода",
+        self._heading(frame, "шаг 4 · режим", "Режим обхода",
                       "Можно поменять в любой момент в настройках или из трея.")
         box = tk.Frame(frame, bg=THEME.bg, padx=30)
         box.pack(fill="x")
@@ -491,9 +540,9 @@ class FirstRunWizard(tk.Toplevel):
             )
             card.pack(fill="x", pady=(0, 10))
 
-    # 4 — стратегия
+    # 5 — стратегия
     def _step_strategy(self, frame: tk.Frame) -> None:
-        self._heading(frame, "шаг 4 · стратегия", "Стратегия zapret",
+        self._heading(frame, "шаг 5 · стратегия", "Стратегия zapret",
                       "«Авто» прогонит все стратегии и выберет ту, что реально "
                       "пробивает блокировки у вашего провайдера (~1-2 минуты).")
         box = tk.Frame(frame, bg=THEME.bg, padx=30)
@@ -622,12 +671,12 @@ class FirstRunWizard(tk.Toplevel):
         self._after(1100, self._advance_after_auto)
 
     def _advance_after_auto(self) -> None:
-        if self._step == 4 and not self._animating and not self._finished:
-            self._slide_to(5, direction=1)
+        if self._step == 5 and not self._animating and not self._finished:
+            self._slide_to(6, direction=1)
 
-    # 5 — опции
+    # 6 — опции
     def _step_options(self, frame: tk.Frame) -> None:
-        self._heading(frame, "шаг 5 · опции", "Последние штрихи",
+        self._heading(frame, "шаг 6 · опции", "Последние штрихи",
                       "Всё это можно поменять в настройках в любой момент.")
         box = tk.Frame(frame, bg=THEME.bg, padx=30)
         box.pack(fill="x")
@@ -665,7 +714,7 @@ class FirstRunWizard(tk.Toplevel):
             except Exception:
                 pass
 
-    # 6 — финиш
+    # 7 — финиш
     def _step_finish(self, frame: tk.Frame) -> None:
         self._collect_options()
         center = tk.Frame(frame, bg=THEME.bg)
@@ -686,7 +735,8 @@ class FirstRunWizard(tk.Toplevel):
             s_text = strategy[:-4] if strategy.endswith(".bat") else strategy
         preset = presets.by_id(self._data["domain_preset"])
         summary = (
-            f"Тема: {theme_label_for(self._data['theme'])}   ·   "
+            f"Приложение: {'VPN' if self._data['app_mode'] == 'vpn' else 'обход DPI'}"
+            f"   ·   Тема: {theme_label_for(self._data['theme'])}   ·   "
             f"Домены: {preset.label if preset else '—'}\n"
             f"Режим: {'гейминг' if self._data['game_mode'] == 'gaming' else 'обычный'}"
             f"   ·   Стратегия: {s_text}"
@@ -772,8 +822,9 @@ class FirstRunWizard(tk.Toplevel):
             return
         self._finished = True
         data = {"wizard_done": True}
-        # тему пользователь мог уже переключить — сохраняем
+        # тему и режим приложения пользователь мог уже выбрать — сохраняем
         data["theme"] = self._data["theme"]
+        data["app_mode"] = self._data["app_mode"]
         self._close()
         if self._on_finish:
             try:

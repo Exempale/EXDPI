@@ -5,9 +5,10 @@ import logging
 import sys
 import threading
 import tkinter as tk
-from typing import Optional
+from tkinter import ttk
+from typing import Dict, List, Optional
 
-from . import __version__, autostart, easter, logs, notify, paths
+from . import __version__, autostart, easter, logs, notify, paths, singbox_config
 from .config import save as save_config
 from .controller import Controller
 from .theme import THEME, apply_theme, available_themes
@@ -17,7 +18,14 @@ from .ui_settings import SettingsWindow
 from .ui_tg_guide import TgVcGuideDialog
 from .ui_wizard import FirstRunWizard
 from .updater import UpdateDialog, check_async, snooze_for_three_days
-from .widgets import AnimatedToggle, IconButton, StatusDot
+from .widgets import (
+    AdBanner,
+    AnimatedToggle,
+    AppModeSwitch,
+    IconButton,
+    ServerListBox,
+    StatusDot,
+)
 
 log = logging.getLogger("dpibypass.ui")
 
@@ -31,6 +39,11 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
 
+        # Показывать полный traceback необработанных ошибок Tk-колбэков в
+        # копируемом окне: под PyInstaller (console=False) любое исключение в
+        # колбэке (открытие настроек, клики и т.п.) иначе пропадает молча.
+        self.report_callback_exception = self._report_callback_exception
+
         self.ctl = Controller()
         self.ctl.bind(on_state=self._on_state, on_error=self._on_error)
 
@@ -38,6 +51,9 @@ class App(tk.Tk):
         self._after_jobs: list[str] = []
         self._tray: Optional[TrayController] = None
         self._quitting = False
+        # список серверов из последней разобранной подписки (http/https);
+        # для прямой ссылки vless/ss — пусто, поле "локация" скрыто.
+        self._vpn_servers: List[Dict[str, str]] = []
 
         # запуск свёрнутым: прячем окно СРАЗУ, до первой отрисовки, чтобы оно
         # не успело мелькнуть на экране (--minimized в argv или настройка).
@@ -48,31 +64,17 @@ class App(tk.Tk):
         self.title("EXDPI")
         self.configure(bg=THEME.bg)
         self.resizable(True, True)
-        self.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
-        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
         if self._start_minimized:
             try:
                 self.withdraw()
             except Exception:
                 pass
-        self._center_on_screen()
+        # размер/минимум окна зависят от режима (DPI компактный, VPN выше)
+        self._apply_mode_geometry()
 
-        try:
-            ico = paths.icon_ico()
-            if ico.exists():
-                self.iconbitmap(default=str(ico))
-        except Exception:
-            pass
-
-        # Дополнительно ставим PNG как iconphoto — на HiDPI Windows иногда
-        # берёт именно его, и иконка получается резче.
-        try:
-            png = paths.icon_png()
-            if png.exists():
-                self._icon_photo = tk.PhotoImage(file=str(png))
-                self.iconphoto(True, self._icon_photo)
-        except Exception:
-            pass
+        # Иконка окна (тайтлбар + панель задач): штатный Tk-путь
+        # (iconbitmap/iconphoto) плюс надёжный WinAPI-фоллбэк — см. _apply_window_icon.
+        self._apply_window_icon()
 
         # удалим стандартное меню
         try:
@@ -132,6 +134,33 @@ class App(tk.Tk):
         y = (sh - self.HEIGHT) // 2 - 40
         self.geometry(f"{self.WIDTH}x{self.HEIGHT}+{max(0, x)}+{max(0, y)}")
 
+    # ── размеры окна под режим (VPN шире/выше — там список серверов,
+    #    поле ссылки и баннер; DPI компактный) ──────────────────────────
+    def _apply_mode_geometry(self) -> None:
+        """Подобрать размер/минимум окна под текущий режим приложения.
+
+        VPN-экран несёт список серверов + поле ссылки + баннер, поэтому ему
+        нужно заметно больше высоты, иначе нижние элементы (тоггл, статус,
+        баннер) не помещаются. DPI-экран — компактный. Высота ограничивается
+        высотой экрана, чтобы окно не уезжало за край на ноутбуках.
+        """
+        if self.ctl.is_vpn:
+            w, h, min_w, min_h = 630, 830, 560, 700
+        else:
+            w, h, min_w, min_h = 400, 440, 400, 420
+        try:
+            sh = self.winfo_screenheight()
+            if h > sh - 80:
+                h = max(min_h, sh - 80)
+        except Exception:
+            pass
+        self.WIDTH, self.HEIGHT = w, h
+        try:
+            self.minsize(min_w, min_h)
+        except Exception:
+            pass
+        self._center_on_screen()
+
     def _build(self) -> None:
         outer = tk.Frame(self, bg=THEME.bg, padx=22, pady=18)
         outer.pack(fill="both", expand=True)
@@ -152,6 +181,12 @@ class App(tk.Tk):
             tooltip="Переключить тему",
         ).pack(side="right", padx=(8, 0), pady=(2, 0))
 
+        self.mode_switch = AppModeSwitch(
+            header, value=str(self.ctl.cfg.get("app_mode", "dpi")),
+            on_change=self._on_app_mode_change,
+        )
+        self.mode_switch.pack(side="right", padx=(8, 8), pady=(2, 0))
+
         head_left = tk.Frame(header, bg=THEME.bg)
         head_left.pack(side="left", fill="x", expand=True)
         tk.Label(
@@ -171,10 +206,36 @@ class App(tk.Tk):
         div = tk.Frame(outer, bg=THEME.border, height=1)
         div.pack(fill="x", pady=(14, 0))
 
-        # ── center toggle area ───────────────────────────────────────
+        # ── center area: DPI-режим или VPN-режим ───────────────────────
         center = tk.Frame(outer, bg=THEME.bg)
         center.pack(expand=True, fill="both")
 
+        if self.ctl.is_vpn:
+            self._build_vpn_view(center)
+        else:
+            self._build_dpi_view(center)
+
+        # ── footer ──────────────────────────────────────────────────
+        footer = tk.Frame(outer, bg=THEME.bg)
+        footer.pack(side="bottom", fill="x", pady=(8, 0))
+
+        tk.Label(
+            footer, text="автор · Exempale",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "bold"),
+        ).pack(side="left")
+        # версия — она же скрытая пасхалка: 5 кликов подряд открывают
+        # прикольную картинку :D
+        self._egg_clicks = 0
+        ver_lbl = tk.Label(
+            footer, text=f"EXDPI v{__version__}",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 8), cursor="hand2",
+        )
+        ver_lbl.pack(side="right")
+        ver_lbl.bind("<Button-1>", lambda _e: self._on_egg_click())
+
+    def _build_dpi_view(self, center: tk.Frame) -> None:
         toggle_box = tk.Frame(center, bg=THEME.bg)
         toggle_box.pack(expand=True)
 
@@ -216,6 +277,7 @@ class App(tk.Tk):
             toggle_box, text="нет соединений",
             fg=THEME.text_muted, bg=THEME.bg,
             font=(THEME.font_ui, 9),
+            wraplength=360, justify="center",
         )
         self.hint_lbl.pack(pady=(6, 0))
 
@@ -251,27 +313,335 @@ class App(tk.Tk):
         self.mode_lbl.pack(pady=(6, 0))
         self.mode_lbl.bind("<Button-1>", lambda _e: self._cycle_game_mode())
 
-        # ── footer ──────────────────────────────────────────────────
-        footer = tk.Frame(outer, bg=THEME.bg)
-        footer.pack(side="bottom", fill="x", pady=(8, 0))
+    def _build_vpn_view(self, center: tk.Frame) -> None:
+        toggle_box = tk.Frame(center, bg=THEME.bg)
+        toggle_box.pack(expand=True, fill="both")
 
+        tk.Frame(toggle_box, bg=THEME.bg, height=10).pack()
+
+        self._vpn_sub_job: Optional[str] = None
+
+        uri_field = tk.Frame(toggle_box, bg=THEME.bg)
+        uri_field.pack(fill="x", pady=(0, 10))
         tk.Label(
-            footer, text="автор · Exempale",
+            uri_field, text="VPN-ССЫЛКА (vless://, ss://, vmess://, trojan://, "
+                             "hysteria2://, tuic:// или подписка http/https)",
             fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 9, "bold"),
-        ).pack(side="left")
-        # версия — она же скрытая пасхалка: 5 кликов подряд открывают
-        # прикольную картинку :D
-        self._egg_clicks = 0
-        ver_lbl = tk.Label(
-            footer, text=f"EXDPI v{__version__}",
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8), cursor="hand2",
+            font=(THEME.font_ui, 8, "bold"), anchor="w", wraplength=520,
+            justify="left",
+        ).pack(fill="x")
+        initial_uri = str(self.ctl.cfg.get("vpn_sub_url") or self.ctl.cfg.get("vpn_uri") or "")
+        self.vpn_uri_var = tk.StringVar(value=initial_uri)
+        self.vpn_uri_entry = tk.Entry(
+            uri_field,
+            textvariable=self.vpn_uri_var,
+            bg=THEME.card, fg=THEME.text_primary,
+            insertbackground=THEME.accent,
+            relief="flat", bd=0,
+            highlightthickness=1,
+            highlightbackground=THEME.border,
+            highlightcolor=THEME.accent_dim,
+            font=(THEME.font_ui, 10),
         )
-        ver_lbl.pack(side="right")
-        ver_lbl.bind("<Button-1>", lambda _e: self._on_egg_click())
+        self.vpn_uri_entry.pack(fill="x", ipady=6, pady=(4, 0))
+        self.vpn_uri_var.trace_add("write", lambda *_a: self._on_vpn_uri_change())
+        # Ctrl+V из tk.Entry обычно работает через виртуальное событие
+        # <<Paste>>, но на русской раскладке клавиатуры keysym для V может
+        # отличаться от латинского "v" — тогда стандартный bind не срабатывает.
+        # Проверяем по физическому keycode (не зависит от раскладки).
+        self.vpn_uri_entry.bind("<Key>", self._on_vpn_uri_keypress)
 
-    # ── пасхалка ─────────────────────────────────────────────────────
+        self._vpn_uri_field = uri_field
+
+        self.server_list = ServerListBox(
+            toggle_box,
+            on_select=self._on_location_selected,
+            on_refresh=self._on_refresh_servers,
+            on_ping=self._on_ping_servers,
+            height=150,
+        )
+        self.server_list.pack(fill="x", pady=(0, 10))
+
+        self.toggle = AnimatedToggle(toggle_box, on_change=self._on_toggle)
+        self.toggle.pack(pady=(6, 16))
+
+        status_row = tk.Frame(toggle_box, bg=THEME.bg)
+        status_row.pack()
+        self.dot = StatusDot(status_row)
+        self.dot.pack(side="left", padx=(0, 8))
+        self.status_lbl = tk.Label(
+            status_row, text="Отключено",
+            fg=THEME.text_primary, bg=THEME.bg,
+            font=(THEME.font_ui, 16, "bold"),
+        )
+        self.status_lbl.pack(side="left")
+
+        self.hint_lbl = tk.Label(
+            toggle_box, text="VPN: отключён",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9),
+            wraplength=360, justify="center",
+        )
+        self.hint_lbl.pack(pady=(6, 0))
+
+        AdBanner(toggle_box, width=320).pack(pady=(12, 0))
+
+        self._refresh_server_list_from_cfg()
+        sub_url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()
+        if sub_url and not self._vpn_servers:
+            self._schedule_vpn_link_resolve(delay=50)
+
+    def _on_vpn_uri_keypress(self, event: "tk.Event") -> Optional[str]:
+        """Явный Ctrl+V, независимый от раскладки клавиатуры.
+
+        ``keycode`` — физический код клавиши (86 = "V" на стандартной
+        QWERTY-раскладке) и не зависит от текущего языка ввода, в отличие
+        от ``keysym``, который на кириллической раскладке может прислать
+        совсем другой символ и не сработать со стандартным Control-V.
+        """
+        ctrl = bool(event.state & 0x0004)
+        if ctrl and event.keycode == 86:
+            try:
+                clip = self.clipboard_get()
+            except Exception:
+                return None
+            try:
+                self.vpn_uri_entry.delete(0, tk.END)
+                self.vpn_uri_entry.insert(0, clip.strip())
+            except Exception:
+                pass
+            return "break"
+        return None
+
+    def _on_vpn_uri_change(self) -> None:
+        raw = self.vpn_uri_var.get().strip()
+        if singbox_config.is_subscription_url(raw):
+            # подписка — не пишем в vpn_uri прямо, ждём фетча/разбора
+            self.ctl.cfg["vpn_sub_url"] = raw
+            self.ctl.save()
+            self._schedule_vpn_link_resolve()
+            return
+
+        if self._vpn_sub_job is not None:
+            try:
+                self.after_cancel(self._vpn_sub_job)
+            except Exception:
+                pass
+            self._vpn_sub_job = None
+        self.ctl.cfg["vpn_uri"] = raw
+        self.ctl.cfg["vpn_sub_url"] = ""
+        self.ctl.cfg["vpn_sub_tag"] = ""
+        self.ctl.save()
+        self._refresh_server_list_from_cfg()
+
+    def _schedule_vpn_link_resolve(self, delay: int = 700) -> None:
+        if self._vpn_sub_job is not None:
+            try:
+                self.after_cancel(self._vpn_sub_job)
+            except Exception:
+                pass
+        self._vpn_sub_job = self.after(delay, self._resolve_vpn_link)
+
+    def _resolve_vpn_link(self) -> None:
+        """Скачать и разобрать подписку в фоне, не блокируя UI."""
+        self._vpn_sub_job = None
+        url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()
+        if not url:
+            return
+        try:
+            self.hint_lbl.configure(text="проверка подписки…", fg=THEME.text_muted)
+            self.server_list.set_refreshing(True)
+        except Exception:
+            pass
+
+        def _work() -> None:
+            try:
+                servers = singbox_config.list_servers(url)
+                err = None
+            except Exception as exc:
+                servers = []
+                err = str(exc)
+            self.after(0, lambda: self._apply_resolved_servers(url, servers, err))
+
+        threading.Thread(target=_work, daemon=True, name="vpn-sub-fetch").start()
+
+    def _apply_resolved_servers(
+        self, url: str, servers: List[Dict[str, str]], err: Optional[str]
+    ) -> None:
+        try:
+            self.server_list.set_refreshing(False)
+        except Exception:
+            pass
+        # пока шёл фетч, пользователь мог поменять поле — тогда результат
+        # уже неактуален, применять его не нужно.
+        if str(self.ctl.cfg.get("vpn_sub_url", "")).strip() != url:
+            return
+        if err or not servers:
+            self._vpn_servers = []
+            self._update_location_picker()
+            try:
+                self.hint_lbl.configure(
+                    text=f"подписка: {err or 'нет серверов'}", fg=THEME.danger_dim
+                )
+            except Exception:
+                pass
+            return
+
+        self._vpn_servers = servers
+        prev_tag = str(self.ctl.cfg.get("vpn_sub_tag", ""))
+        chosen = next((s for s in servers if s["tag"] == prev_tag), servers[0])
+        self.ctl.cfg["vpn_uri"] = chosen["uri"]
+        self.ctl.cfg["vpn_sub_tag"] = chosen["tag"]
+        self.ctl.save()
+        self._update_location_picker()
+        try:
+            self.hint_lbl.configure(
+                text=f"подписка: найдено {len(servers)} серверов", fg=THEME.text_muted
+            )
+        except Exception:
+            pass
+
+    def _refresh_server_list_from_cfg(self) -> None:
+        """Синхронизировать список серверов с конфигом без похода в сеть.
+
+        Для прямой ссылки (не подписки) строим список из одного элемента —
+        так пользователь может замерить пинг и увидеть флаг/тег даже без
+        подписки. Для подписки список заполнит фоновый фетч (см.
+        ``_resolve_vpn_link``) — здесь только не даём экрану остаться пустым,
+        если результат уже был закэширован в ``self._vpn_servers``.
+        """
+        sub_url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()
+        if sub_url:
+            self._update_location_picker()
+            return
+
+        uri = str(self.ctl.cfg.get("vpn_uri", "")).strip()
+        if uri:
+            try:
+                parsed = singbox_config.parse_uri(uri)
+                self._vpn_servers = [{
+                    "tag": str(parsed.get("tag") or "server"),
+                    "uri": uri,
+                    "type": parsed.get("type", ""),
+                    "server": parsed.get("server", ""),
+                    "server_port": parsed.get("server_port", 0),
+                }]
+            except Exception:
+                self._vpn_servers = []
+        else:
+            self._vpn_servers = []
+        self._update_location_picker()
+
+    def _update_location_picker(self) -> None:
+        try:
+            lst = self.server_list
+        except AttributeError:
+            return
+        current_tag = str(self.ctl.cfg.get("vpn_sub_tag", ""))
+        tags = [s["tag"] for s in self._vpn_servers]
+        selected = current_tag if current_tag in tags else (tags[0] if tags else "")
+        lst.set_servers(self._vpn_servers, selected_tag=selected)
+
+    def _on_location_selected(self, tag: str) -> None:
+        match = next((s for s in self._vpn_servers if s["tag"] == tag), None)
+        if not match:
+            return
+        self.ctl.cfg["vpn_uri"] = match["uri"]
+        self.ctl.cfg["vpn_sub_tag"] = match["tag"]
+        self.ctl.save()
+        if self.ctl.is_on():
+            def _restart():
+                try:
+                    self.ctl.restart_with_new_config()
+                except Exception:
+                    log.exception("vpn location restart failed")
+                finally:
+                    self.after(0, self._refresh_status_text)
+            threading.Thread(target=_restart, daemon=True, name="vpn-loc-restart").start()
+
+    def _on_refresh_servers(self) -> None:
+        """Кнопка «обновить» в списке серверов: перечитать подписку с сервера."""
+        sub_url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()
+        if not sub_url:
+            self._refresh_server_list_from_cfg()
+            return
+        self._schedule_vpn_link_resolve(delay=0)
+
+    def _on_ping_servers(self) -> None:
+        """Кнопка «пинг»: TCP-connect задержка до каждого сервера списка.
+
+        Замеры идут параллельно в пуле потоков (не в UI-потоке — сокет с
+        таймаутом иначе подвесил бы окно на несколько секунд при большой
+        подписке), результаты возвращаются в UI через ``self.after``.
+        """
+        servers = list(self._vpn_servers)
+        if not servers:
+            return
+        try:
+            self.server_list.set_pinging(True)
+        except Exception:
+            pass
+
+        results: Dict[str, int] = {}
+
+        def _ping_one_collect(srv: Dict[str, str]) -> None:
+            host = str(srv.get("server", ""))
+            port = srv.get("server_port", 0)
+            try:
+                ms = singbox_config.ping_server(host, int(port)) if host and port else -1
+            except Exception:
+                ms = -1
+            results[srv["tag"]] = ms
+            self.after(0, lambda t=srv["tag"], m=ms: self.server_list.set_ping(t, m))
+
+        def _work() -> None:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(_ping_one_collect, servers))
+            self.after(0, lambda: self.server_list.set_pinging(False))
+            if bool(self.ctl.cfg.get("vpn_autoselect_fastest", False)):
+                alive = {t: m for t, m in results.items() if m >= 0}
+                if alive:
+                    best = min(alive, key=alive.get)
+                    self.after(0, lambda t=best: self._autoselect_best(t))
+
+        threading.Thread(target=_work, daemon=True, name="vpn-ping").start()
+
+    def _autoselect_best(self, tag: str) -> None:
+        """Выбрать самый быстрый сервер (по последнему замеру пинга)."""
+        try:
+            self.server_list.set_selected(tag)
+        except Exception:
+            pass
+        self._on_location_selected(tag)
+        try:
+            self._flash_hint("выбран самый быстрый сервер")
+        except Exception:
+            pass
+
+    def _on_app_mode_change(self, mode: str) -> None:
+        if str(self.ctl.cfg.get("app_mode", "dpi")) == mode:
+            return
+        was_on = self.ctl.is_on()
+        self._error_text = None
+        self.ctl.cfg["app_mode"] = mode
+        self.ctl.save()
+
+        def _restart():
+            try:
+                if was_on:
+                    self.ctl.restart_with_new_config()
+            except Exception:
+                log.exception("app mode restart failed")
+            finally:
+                self.after(0, self._rebuild_ui)
+
+        if was_on:
+            threading.Thread(target=_restart, daemon=True, name="mode-switch-restart").start()
+        else:
+            self._rebuild_ui()
+
+    # ── footer / пасхалка ─────────────────────────────────────────────
     def _on_egg_click(self) -> None:
         """5 кликов по версии в футере → открыть картинку-пасхалку."""
         self._egg_clicks += 1
@@ -285,17 +655,21 @@ class App(tk.Tk):
     # ── status / refresh ─────────────────────────────────────────────
     def _refresh_status_text(self) -> None:
         cfg = self.ctl.cfg
-        host = cfg.get("proxy_host", "127.0.0.1")
-        port = cfg.get("proxy_port", 1443)
-        self.info_lbl.configure(text=f"mtproto · {host}:{port}")
+        if not self.ctl.is_vpn:
+            host = cfg.get("proxy_host", "127.0.0.1")
+            port = cfg.get("proxy_port", 1443)
+            try:
+                self.info_lbl.configure(text=f"mtproto · {host}:{port}")
+            except Exception:
+                pass
 
-        mode = str(cfg.get("game_mode", "normal"))
-        mode_name = "гейминг" if mode == "gaming" else "обычный"
-        mode_text = f"режим: {mode_name} · сменить"
-        try:
-            self.mode_lbl.configure(text=mode_text)
-        except Exception:
-            pass
+            mode = str(cfg.get("game_mode", "normal"))
+            mode_name = "гейминг" if mode == "gaming" else "обычный"
+            mode_text = f"режим: {mode_name} · сменить"
+            try:
+                self.mode_lbl.configure(text=mode_text)
+            except Exception:
+                pass
 
         is_on = self.ctl.is_on()
         self.toggle.set(is_on, animate=False)
@@ -306,9 +680,13 @@ class App(tk.Tk):
         elif is_on:
             self.status_lbl.configure(text="Включено", fg=THEME.text_primary)
             self.dot.set_color(THEME.accent)
+            if self.ctl.is_vpn:
+                self.hint_lbl.configure(text="VPN: подключён", fg=THEME.text_muted)
         else:
             self.status_lbl.configure(text="Отключено", fg=THEME.text_primary)
             self.dot.set_color(THEME.danger)
+            if self.ctl.is_vpn:
+                self.hint_lbl.configure(text="VPN: отключён", fg=THEME.text_muted)
 
         if self._tray is not None:
             try:
@@ -317,12 +695,11 @@ class App(tk.Tk):
                 pass
 
     def _schedule_stats_refresh(self) -> None:
-        try:
-            stats = self.ctl.proxy.stats_snapshot() if self.ctl.proxy.is_running else None
-        except Exception:
-            stats = None
-
-        if not self._error_text:
+        if not self.ctl.is_vpn and not self._error_text:
+            try:
+                stats = self.ctl.proxy.stats_snapshot() if self.ctl.proxy.is_running else None
+            except Exception:
+                stats = None
             if stats is None:
                 self.hint_lbl.configure(text="нет соединений", fg=THEME.text_muted)
             else:
@@ -345,7 +722,7 @@ class App(tk.Tk):
 
     def _on_error(self, msg: str) -> None:
         def _apply():
-            self._error_text = msg[:60]
+            self._error_text = str(msg)
             self._refresh_status_text()
         self.after(0, _apply)
         try:
@@ -517,6 +894,7 @@ class App(tk.Tk):
             self.option_add("*Menu.foreground", THEME.text_primary)
         except Exception:
             pass
+        self._apply_mode_geometry()
         self._build()
         self._refresh_status_text()
 
@@ -539,6 +917,157 @@ class App(tk.Tk):
         prev_color = self.hint_lbl.cget("fg")
         self.hint_lbl.configure(text=text, fg=THEME.accent_dim)
         self.after(1500, lambda: self.hint_lbl.configure(text=prev, fg=prev_color))
+
+    # ── error surfacing ──────────────────────────────────────────────
+    def _report_callback_exception(self, exc, val, tb) -> None:
+        import traceback as _tb
+        text = "".join(_tb.format_exception(exc, val, tb))
+        try:
+            log.error("uncaught Tk callback exception:\n%s", text)
+        except Exception:
+            pass
+        try:
+            self._show_error_dialog("Необработанная ошибка", text)
+        except Exception:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("EXDPI — ошибка", text[:1500])
+            except Exception:
+                pass
+
+    def _show_error_dialog(self, title: str, body: str) -> None:
+        """Копируемое окно с полным текстом ошибки (traceback не обрезается)."""
+        win = tk.Toplevel(self)
+        win.title(f"EXDPI — {title}")
+        win.configure(bg=THEME.bg)
+        try:
+            win.transient(self)
+        except Exception:
+            pass
+        win.geometry("660x440")
+        win.minsize(420, 260)
+
+        tk.Label(
+            win, text=title, fg=THEME.danger, bg=THEME.bg,
+            font=(THEME.font_ui, 12, "bold"), anchor="w",
+        ).pack(fill="x", padx=16, pady=(14, 2))
+        tk.Label(
+            win, text="Скопируй полный текст и пришли в чат — так я точно починю.",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 9), anchor="w",
+        ).pack(fill="x", padx=16, pady=(0, 8))
+
+        frame = tk.Frame(win, bg=THEME.bg)
+        frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        txt = tk.Text(
+            frame, bg=THEME.card, fg=THEME.text_primary,
+            insertbackground=THEME.accent, relief="flat", bd=0,
+            highlightthickness=1, highlightbackground=THEME.border,
+            font=("Consolas", 9), wrap="word", padx=10, pady=8,
+        )
+        sb = ttk.Scrollbar(frame, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+        txt.insert("1.0", body)
+        txt.configure(state="disabled")
+
+        row = tk.Frame(win, bg=THEME.bg)
+        row.pack(fill="x", padx=16, pady=(0, 14))
+
+        def _copy():
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(body)
+                self.update()
+            except Exception:
+                pass
+
+        copy_btn = tk.Label(
+            row, text="  копировать  ", fg=THEME.bg, bg=THEME.accent,
+            font=(THEME.font_ui, 10, "bold"), cursor="hand2", padx=14, pady=6,
+        )
+        copy_btn.pack(side="left")
+        copy_btn.bind("<Button-1>", lambda _e: _copy())
+        close_btn = tk.Label(
+            row, text="закрыть", fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 10), cursor="hand2", padx=10, pady=6,
+        )
+        close_btn.pack(side="right")
+        close_btn.bind("<Button-1>", lambda _e: win.destroy())
+
+    # ── иконка окна ────────────────────────────────────
+    def _apply_window_icon(self) -> None:
+        """Проставить иконку EXDPI на окно и в панель задач.
+
+        Штатные Tk-вызовы iconbitmap/iconphoto на Windows часто не
+        срабатывают (старый Tk не умеет PNG; ICO с PNG-фреймами
+        грузится не везде) — тогда окно остаётся с дефолтным пером
+        Tk. Поэтому после штатного пути дополнительно проставляем
+        иконку напрямую через WinAPI (WM_SETICON), в обход Tk.
+        """
+        try:
+            ico = paths.icon_ico()
+            if ico.exists():
+                self.iconbitmap(default=str(ico))
+        except Exception:
+            log.exception("iconbitmap failed")
+        try:
+            png = paths.icon_png()
+            if png.exists():
+                self._icon_photo = tk.PhotoImage(file=str(png))
+                self.iconphoto(True, self._icon_photo)
+        except Exception:
+            log.exception("iconphoto failed")
+        if sys.platform == "win32":
+            try:
+                self._apply_win32_icon()
+            except Exception:
+                log.exception("win32 window icon failed")
+
+    def _apply_win32_icon(self) -> None:
+        """Загрузить resources/icon.ico через WinAPI и повесить на HWND окна."""
+        import ctypes
+        ico = paths.icon_ico()
+        if not ico.exists():
+            return
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x00000010
+        WM_SETICON = 0x0080
+        ICON_SMALL, ICON_BIG = 0, 1
+        GA_ROOT = 2
+        SM_CXSMICON, SM_CYSMICON, SM_CXICON, SM_CYICON = 49, 50, 11, 12
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = ctypes.c_void_p
+        user32.LoadImageW.argtypes = [
+            ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint,
+            ctypes.c_int, ctypes.c_int, ctypes.c_uint,
+        ]
+        user32.SendMessageW.restype = ctypes.c_void_p
+        user32.SendMessageW.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p,
+        ]
+        user32.GetAncestor.restype = ctypes.c_void_p
+        user32.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        user32.GetSystemMetrics.restype = ctypes.c_int
+        path = str(ico)
+        cx_s = user32.GetSystemMetrics(SM_CXSMICON) or 16
+        cy_s = user32.GetSystemMetrics(SM_CYSMICON) or 16
+        cx_b = user32.GetSystemMetrics(SM_CXICON) or 32
+        cy_b = user32.GetSystemMetrics(SM_CYICON) or 32
+        hicon_small = user32.LoadImageW(None, path, IMAGE_ICON, cx_s, cy_s, LR_LOADFROMFILE)
+        hicon_big = user32.LoadImageW(None, path, IMAGE_ICON, cx_b, cy_b, LR_LOADFROMFILE)
+        # HWND верхнеуровневого окна: winfo_id() — дочернее, берём корень.
+        self.update_idletasks()
+        wid = self.winfo_id()
+        hwnd = user32.GetAncestor(wid, GA_ROOT) or wid
+        if hicon_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+        if hicon_big:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+        # держим хэндлы, чтобы иконки не выгрузились.
+        self._hicon_small = hicon_small
+        self._hicon_big = hicon_big
 
     # ── tray ────────────────────────────────────────────────────────
     def _init_tray(self) -> None:

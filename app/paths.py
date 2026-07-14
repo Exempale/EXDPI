@@ -46,6 +46,34 @@ def easter_image() -> Path:
     return resource_root() / "easter" / "1.jpg"
 
 
+def banner_image() -> Path:
+    """Рекламный баннер (resources/banner.jpg) для VPN-режима.
+
+    Бандлится через build.spec рядом с icon.png / easter.
+    """
+    return resource_root() / "banner.jpg"
+
+
+def singbox_root() -> Path:
+    """Папка с ядром Sing-box (resources/singbox/sing-box.exe)."""
+    return resource_root() / "singbox"
+
+
+def singbox_binary() -> Path:
+    """Исполняемый файл sing-box.exe."""
+    return singbox_root() / "sing-box.exe"
+
+
+def singbox_config_path() -> Path:
+    """Куда класть сгенерированный singbox_config.json.
+
+    Лежит в %APPDATA%/EXDPI рядом с config.json — туда можно писать и в
+    dev-режиме, и в onefile-сборке (в _MEIPASS писать нельзя).
+    """
+    from .config import app_dir
+    return app_dir() / "singbox_config.json"
+
+
 def icon_ico() -> Path:
     p = resource_root() / "icon.ico"
     return p

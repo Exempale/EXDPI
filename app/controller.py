@@ -8,6 +8,7 @@ from typing import Callable, Dict, Optional
 from . import config as appconfig
 from .proxy_runner import ProxyRunner
 from .securedns import SecureDNSRunner
+from .singbox_runner import SingboxRunner
 from .strategy_auto import is_auto, resolve_strategy
 from .zapret_runner import ZapretRunner
 
@@ -20,6 +21,7 @@ class Controller:
         self.zapret = ZapretRunner()
         self.proxy = ProxyRunner()
         self.securedns = SecureDNSRunner()
+        self.singbox = SingboxRunner()
         self._lock = threading.Lock()
         self._on_state: Optional[Callable[[bool], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
@@ -36,6 +38,8 @@ class Controller:
 
     def is_on(self) -> bool:
         with self._lock:
+            if self.is_vpn:
+                return self._target_on and self.singbox.is_running
             return self._target_on and (
                 (not self.cfg.get("zapret_enabled", True) or self.zapret.is_running)
                 and (not self.cfg.get("proxy_enabled", True) or self.proxy.is_running)
@@ -49,6 +53,10 @@ class Controller:
     def is_auto_strategy(self) -> bool:
         return is_auto(str(self.cfg.get("zapret_strategy", "")))
 
+    @property
+    def is_vpn(self) -> bool:
+        return str(self.cfg.get("app_mode", "dpi")) == "vpn"
+
     # ── config ────────────────────────────────────────────────────────
     def update_cfg(self, **changes) -> None:
         self.cfg.update(changes)
@@ -61,20 +69,30 @@ class Controller:
     def start(self) -> None:
         with self._lock:
             self._target_on = True
-        self.proxy.reset_stats()
 
         try:
-            if self.cfg.get("proxy_enabled", True):
-                self.proxy.start(self.cfg, on_error=self._proxy_error)
-            if self.cfg.get("zapret_enabled", True):
-                self.zapret.start(
-                    self.active_strategy(),
-                    on_exit=self._zapret_exit,
-                    custom_domains=list(self.cfg.get("custom_domains") or []),
-                    game_mode=str(self.cfg.get("game_mode", "normal")),
-                )
-            if self.cfg.get("securedns_enabled", False):
-                self.securedns.start(self.cfg, on_error=self._securedns_error)
+            if self.is_vpn:
+                uri = str(self.cfg.get("vpn_uri", "")).strip()
+                if not uri:
+                    raise RuntimeError(
+                        "VPN-ссылка не задана — вставьте vless://, ss:// "
+                        "или ссылку-подписку (http/https) и выберите сервер"
+                    )
+                self.singbox.start(uri, on_exit=self._singbox_exit,
+                                   options=self.cfg)
+            else:
+                self.proxy.reset_stats()
+                if self.cfg.get("proxy_enabled", True):
+                    self.proxy.start(self.cfg, on_error=self._proxy_error)
+                if self.cfg.get("zapret_enabled", True):
+                    self.zapret.start(
+                        self.active_strategy(),
+                        on_exit=self._zapret_exit,
+                        custom_domains=list(self.cfg.get("custom_domains") or []),
+                        game_mode=str(self.cfg.get("game_mode", "normal")),
+                    )
+                if self.cfg.get("securedns_enabled", False):
+                    self.securedns.start(self.cfg, on_error=self._securedns_error)
         except Exception as exc:
             log.exception("start failed")
             if self._on_error:
@@ -88,6 +106,10 @@ class Controller:
     def stop(self) -> None:
         with self._lock:
             self._target_on = False
+        try:
+            self.singbox.stop()
+        except Exception:
+            log.exception("singbox stop")
         try:
             self.zapret.stop()
         except Exception:
@@ -116,6 +138,13 @@ class Controller:
         log.info("zapret exited rc=%d", rc)
         if rc != 0 and self._target_on and self._on_error:
             self._on_error(f"zapret завершился с кодом {rc}")
+        if self._target_on and self._on_state:
+            self._on_state(self.is_on())
+
+    def _singbox_exit(self, rc: int) -> None:
+        log.info("singbox exited rc=%d", rc)
+        if rc != 0 and self._target_on and self._on_error:
+            self._on_error(f"sing-box завершился с кодом {rc}")
         if self._target_on and self._on_state:
             self._on_state(self.is_on())
 

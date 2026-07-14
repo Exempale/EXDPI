@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import math
 import tkinter as tk
-from typing import Callable, Optional
+from tkinter import ttk
+from typing import Callable, Dict, Optional
 
+from . import countries
 from .theme import THEME
 
 
@@ -420,3 +422,542 @@ class IconButton(tk.Canvas):
             x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
         ]
         canvas.create_polygon(pts, smooth=True, **kw)
+
+
+class AppModeSwitch(tk.Frame):
+    """Компактный сегментный переключатель [ DPI | VPN ] для header.
+
+    Используется на главном экране: клик по сегменту меняет режим
+    приложения (DPI-обход ↔ VPN через Sing-box). Стилизован под THEME —
+    активный сегмент рисуется акцентным цветом, неактивный — card.
+    """
+
+    OPTIONS = (("dpi", "DPI"), ("vpn", "VPN"))
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        value: str = "dpi",
+        on_change: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        super().__init__(master, bg=THEME.bg)
+        self._selected = value if value in ("dpi", "vpn") else "dpi"
+        self._on_change = on_change
+        self._buttons: Dict[str, tk.Label] = {}
+
+        row = tk.Frame(self, bg=THEME.card, padx=2, pady=2)
+        row.pack()
+
+        for mode_id, label_text in self.OPTIONS:
+            btn = tk.Label(
+                row, text=label_text,
+                bg=THEME.card, fg=THEME.text_secondary,
+                font=(THEME.font_ui, 9, "bold"),
+                padx=12, pady=3, cursor="hand2",
+            )
+            btn.pack(side="left", padx=1)
+            btn.bind("<Enter>", lambda _e, b=btn, m=mode_id: self._hover(b, m))
+            btn.bind("<Leave>", lambda _e, b=btn: self._leave(b))
+            btn.bind("<Button-1>", lambda _e, m=mode_id: self._on_pick(m))
+            self._buttons[mode_id] = btn
+        self._refresh()
+
+    def get(self) -> str:
+        return self._selected
+
+    def _on_pick(self, mode: str) -> None:
+        if mode == self._selected:
+            return
+        self._selected = mode
+        self._refresh()
+        if self._on_change:
+            try:
+                self._on_change(mode)
+            except Exception:
+                pass
+
+    def _hover(self, btn: tk.Label, mode: str) -> None:
+        if mode != self._selected:
+            btn.configure(bg=THEME.card_hover, fg=THEME.text_primary)
+
+    def _leave(self, btn: tk.Label) -> None:
+        mode = [m for m, b in self._buttons.items() if b is btn][0]
+        if mode != self._selected:
+            btn.configure(bg=THEME.card, fg=THEME.text_secondary)
+
+    def _refresh(self) -> None:
+        for mode_id, btn in self._buttons.items():
+            if mode_id == self._selected:
+                btn.configure(bg=THEME.accent, fg=THEME.bg)
+            else:
+                btn.configure(bg=THEME.card, fg=THEME.text_secondary)
+
+
+_FLAG_W = 22
+_FLAG_H = 14
+
+
+def _stripes_h(canvas: tk.Canvas, colors: tuple[str, ...]) -> None:
+    n = len(colors)
+    for i, c in enumerate(colors):
+        canvas.create_rectangle(0, i * _FLAG_H / n, _FLAG_W, (i + 1) * _FLAG_H / n, fill=c, outline="")
+
+
+def _stripes_v(canvas: tk.Canvas, colors: tuple[str, ...]) -> None:
+    n = len(colors)
+    for i, c in enumerate(colors):
+        canvas.create_rectangle(i * _FLAG_W / n, 0, (i + 1) * _FLAG_W / n, _FLAG_H, fill=c, outline="")
+
+
+def _draw_flag(canvas: tk.Canvas, code: str) -> None:
+    """Нарисовать упрощённый флаг страны на маленьком Canvas по ISO-коду.
+
+    Windows Tk не умеет рисовать flag-эмодзи как иконки (показывает как текст
+    из двух букв) — поэтому рисуем сами. Вся таблица флагов и их отрисовка
+    живёт в ``app.countries`` (единый источник и для определения кода страны
+    по тегу сервера в ``singbox_config``), здесь только прокидываем размеры
+    и цвета темы для неизвестных кодов.
+    """
+    countries.draw_flag(
+        canvas, code, _FLAG_W, _FLAG_H,
+        fallback_bg=THEME.card_hover, fallback_fg=THEME.text_secondary,
+    )
+
+
+class ServerListBox(tk.Frame):
+    """Список серверов подписки: флаг страны + тег + пинг, как в Happ/v2rayTun.
+
+    Каждая строка кликабельна (выбор локации), сверху — заголовок со счётом
+    найденных серверов и две кнопки: «обновить подписку» и «замерить пинг».
+    Сам виджет не делает сеть/сокеты — только рисует то, что ему передают
+    через ``set_servers``/``set_ping``; вся работа (фетч подписки, TCP-пинг)
+    остаётся на стороне вызывающего кода (см. ``ui_app.py``), чтобы не
+    блокировать Tk-петлю и не тащить бизнес-логику в виджет.
+    """
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        on_select: Optional[Callable[[str], None]] = None,
+        on_refresh: Optional[Callable[[], None]] = None,
+        on_ping: Optional[Callable[[], None]] = None,
+        height: int = 220,
+    ) -> None:
+        super().__init__(master, bg=THEME.bg)
+        self._on_select = on_select
+        self._on_refresh = on_refresh
+        self._on_ping = on_ping
+        self._servers: list[dict] = []
+        self._selected_tag: str = ""
+        self._rows: Dict[str, Dict[str, tk.Widget]] = {}
+        self._pings: Dict[str, int] = {}
+
+        head = tk.Frame(self, bg=THEME.bg)
+        head.pack(fill="x")
+        self._count_lbl = tk.Label(
+            head, text="серверы: —",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 8, "bold"), anchor="w",
+        )
+        self._count_lbl.pack(side="left")
+
+        self._sort_btn = tk.Label(
+            head, text="  сортировка  ",
+            fg=THEME.text_secondary, bg=THEME.card,
+            font=(THEME.font_ui, 8, "bold"), cursor="hand2",
+            padx=6, pady=2,
+        )
+        self._sort_btn.pack(side="right", padx=(6, 0))
+        self._sort_btn.bind("<Button-1>", lambda _e: self._click_sort())
+
+        self._ping_btn = tk.Label(
+            head, text="  пинг  ",
+            fg=THEME.text_secondary, bg=THEME.card,
+            font=(THEME.font_ui, 8, "bold"), cursor="hand2",
+            padx=6, pady=2,
+        )
+        self._ping_btn.pack(side="right", padx=(6, 0))
+        self._ping_btn.bind("<Button-1>", lambda _e: self._click_ping())
+
+        self._refresh_btn = tk.Label(
+            head, text="  обновить  ",
+            fg=THEME.text_secondary, bg=THEME.card,
+            font=(THEME.font_ui, 8, "bold"), cursor="hand2",
+            padx=6, pady=2,
+        )
+        self._refresh_btn.pack(side="right", padx=(6, 0))
+        self._refresh_btn.bind("<Button-1>", lambda _e: self._click_refresh())
+
+        outer = tk.Frame(self, bg=THEME.border, bd=0)
+        outer.pack(fill="both", expand=True, pady=(6, 0))
+        canvas = tk.Canvas(
+            outer, bg=THEME.bg, highlightthickness=0, bd=0, height=height,
+        )
+        canvas.pack(side="left", fill="both", expand=True, padx=1, pady=1)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        sb.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=sb.set)
+
+        body = tk.Frame(canvas, bg=THEME.bg)
+        body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(body_id, width=e.width))
+
+        def _on_wheel(e: tk.Event) -> str:
+            try:
+                delta = int(-1 * (e.delta / 120))
+            except Exception:
+                delta = -1 if getattr(e, "num", 0) == 4 else 1
+            canvas.yview_scroll(delta, "units")
+            return "break"
+
+        for w in (canvas, body):
+            w.bind("<MouseWheel>", _on_wheel, add="+")
+            w.bind("<Button-4>", _on_wheel, add="+")
+            w.bind("<Button-5>", _on_wheel, add="+")
+
+        self._canvas = canvas
+        self._body = body
+        self._wheel = _on_wheel
+
+    # ── публичный API ────────────────────────────────────────────────────
+    def set_servers(self, servers: list[dict], selected_tag: str = "") -> None:
+        """Перерисовать список. ``servers`` — как из ``singbox_config.list_servers``."""
+        self._servers = list(servers)
+        self._selected_tag = selected_tag or (servers[0]["tag"] if servers else "")
+        # ``_body`` пересобирается с нуля при каждом вызове — включая
+        # empty-label, которую нельзя переиспользовать как атрибут, иначе
+        # после первого destroy() она будет ссылаться на мёртвый виджет.
+        for child in self._body.winfo_children():
+            child.destroy()
+        self._rows = {}
+        self._pings = {}
+
+        if not servers:
+            tk.Label(
+                self._body, text="ссылка не задана",
+                fg=THEME.text_muted, bg=THEME.bg,
+                font=(THEME.font_ui, 9), pady=14,
+            ).pack(fill="x")
+            self._count_lbl.configure(text="серверы: —")
+            return
+
+        self._count_lbl.configure(text=f"серверы: найдено {len(servers)}")
+        for srv in servers:
+            self._add_row(srv)
+        self._highlight_selected()
+
+    def set_selected(self, tag: str) -> None:
+        self._selected_tag = tag
+        self._highlight_selected()
+
+    def set_ping(self, tag: str, ms: int) -> None:
+        """Обновить текст пинга одной строки (``-1`` → «недоступен»)."""
+        self._pings[tag] = ms
+        row = self._rows.get(tag)
+        if not row:
+            return
+        lbl = row["ping"]
+        if ms < 0:
+            lbl.configure(text="—", fg=THEME.danger_dim)
+        elif ms < 150:
+            lbl.configure(text=f"{ms} мс", fg=THEME.accent)
+        elif ms < 400:
+            lbl.configure(text=f"{ms} мс", fg=THEME.text_secondary)
+        else:
+            lbl.configure(text=f"{ms} мс", fg=THEME.danger_dim)
+
+    def set_pinging(self, pinging: bool) -> None:
+        self._ping_btn.configure(
+            text="  замер…  " if pinging else "  пинг  ",
+            fg=THEME.text_muted if pinging else THEME.text_secondary,
+        )
+
+    def set_refreshing(self, refreshing: bool) -> None:
+        self._refresh_btn.configure(
+            text="  обновляю…  " if refreshing else "  обновить  ",
+            fg=THEME.text_muted if refreshing else THEME.text_secondary,
+        )
+
+    # ── internal ─────────────────────────────────────────────────────────
+    def _add_row(self, srv: dict) -> None:
+        from .singbox_config import guess_country_code, clean_tag
+
+        tag = srv["tag"]
+        clean_name = clean_tag(tag)
+        country_code = guess_country_code(tag)
+
+        row = tk.Frame(self._body, bg=THEME.bg, cursor="hand2")
+        row.pack(fill="x")
+        inner = tk.Frame(row, bg=THEME.bg, padx=8, pady=6)
+        inner.pack(fill="x")
+
+        flag = tk.Canvas(
+            inner, width=_FLAG_W, height=_FLAG_H,
+            bg=THEME.bg, highlightthickness=0, bd=0,
+        )
+        if country_code:
+            _draw_flag(flag, country_code)
+            flag.pack(side="left", padx=(0, 6))
+        else:
+            flag = None
+
+        name = tk.Label(
+            inner, text=clean_name,
+            fg=THEME.text_primary, bg=THEME.bg,
+            font=(THEME.font_ui, 10), anchor="w",
+        )
+        name.pack(side="left", fill="x", expand=True)
+
+        ping = tk.Label(
+            inner, text="—",
+            fg=THEME.text_muted, bg=THEME.bg,
+            font=(THEME.font_ui, 9, "bold"), anchor="e",
+        )
+        ping.pack(side="right")
+
+        widgets = tuple(w for w in (row, inner, flag, name, ping) if w is not None)
+        for w in widgets:
+            w.bind("<Button-1>", lambda _e, t=tag: self._click_row(t))
+            w.bind("<MouseWheel>", self._wheel, add="+")
+            w.bind("<Button-4>", self._wheel, add="+")
+            w.bind("<Button-5>", self._wheel, add="+")
+        self._rows[tag] = {"row": row, "name": name, "ping": ping}
+
+    def _highlight_selected(self) -> None:
+        for tag, row in self._rows.items():
+            selected = tag == self._selected_tag
+            bg = THEME.card_hover if selected else THEME.bg
+            fg = THEME.accent if selected else THEME.text_primary
+            row["row"].configure(bg=bg)
+            for key in ("name",):
+                row[key].configure(bg=bg, fg=fg)
+            row["ping"].configure(bg=bg)
+            for child in row["row"].winfo_children():
+                child.configure(bg=bg)
+
+    def _click_row(self, tag: str) -> None:
+        self._selected_tag = tag
+        self._highlight_selected()
+        if self._on_select:
+            try:
+                self._on_select(tag)
+            except Exception:
+                log.exception("ServerListBox on_select failed")
+
+    def _click_refresh(self) -> None:
+        if self._on_refresh:
+            try:
+                self._on_refresh()
+            except Exception:
+                log.exception("ServerListBox on_refresh failed")
+
+    def _click_ping(self) -> None:
+        if self._on_ping:
+            try:
+                self._on_ping()
+            except Exception:
+                log.exception("ServerListBox on_ping failed")
+
+    def _click_sort(self) -> None:
+        """Пересортировать список по возрастанию пинга (недоступные — вниз).
+
+        Замеры берём из последнего «пинга»; если пинг ещё не замеряли —
+        кнопка просто ничего не меняет (все tag’и без замера равны).
+        """
+        if not self._servers:
+            return
+
+        def _key(srv):
+            ms = self._pings.get(srv["tag"], None)
+            if ms is None or ms < 0:
+                return (1, 10 ** 9)
+            return (0, ms)
+
+        self._servers.sort(key=_key)
+        # перерисовать в новом порядке, сохранив уже показанные замеры
+        saved = dict(self._pings)
+        for child in self._body.winfo_children():
+            child.destroy()
+        self._rows = {}
+        for srv in self._servers:
+            self._add_row(srv)
+        self._highlight_selected()
+        self._pings = saved
+        for tag, ms in list(saved.items()):
+            if tag in self._rows:
+                self.set_ping(tag, ms)
+
+
+class AdBanner(tk.Frame):
+    """Рекламный блок для VPN-режима: картинка-баннер + подпись под ней.
+
+    Картинка ``resources/banner.jpg`` грузится через Pillow, масштабируется
+    под заданную ширину (по высоте — пропорционально) и показывается как
+    кликабельный ``tk.Label``. Под ней — привлекающая внимание подпись в
+    стиле ``THEME``. Клик по картинке открывает реферальную ссылку в
+    браузере по умолчанию (``webbrowser.open``).
+
+    Если PIL недоступен или картинка не найдена — блок показывается в
+    «текстовом» fallback-режиме (кликабельная плашка без изображения),
+    чтобы VPN-экран не падал целиком.
+    """
+
+    # Реферальная ссылка Telegram-бота (см. задачу 3 ТЗ).
+    BANNER_URL = "https://t.me/darknetvpnbot?start=ref11KbZfpA"
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        width: int = 320,
+        url: Optional[str] = None,
+        on_click: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(
+            master,
+            bg=THEME.bg,
+            highlightbackground=THEME.border,
+            highlightthickness=0,
+            bd=0,
+        )
+        self._width = max(160, int(width))
+        self._url = url or self.BANNER_URL
+        self._on_click = on_click
+        # PhotoImage нужно держать ссылкой, иначе Tk его соберёт GC.
+        self._photo: Optional[object] = None
+
+        self._build()
+
+    # ── построение UI ────────────────────────────────────────────────────
+    def _build(self) -> None:
+        # кликабельный «холст»-обёртка под картинку: если картинка есть —
+        # показываем её; если нет — fallback-плашку с текстом.
+        self._img_label = tk.Label(self, bg=THEME.bg, bd=0, cursor="hand2")
+        self._img_label.pack(fill="x", padx=8, pady=(8, 4))
+        self._img_label.bind("<Button-1>", lambda _e: self._open_url())
+
+        # подпись под баннером — короткая, яркая, по центру.
+        self._caption = tk.Label(
+            self,
+            text=(
+                "Попробуйте 7 дней бесплатно\n\n"
+                "Надежный обход блокировок на максимальной скорости."
+            ),
+            bg=THEME.bg,
+            fg=THEME.accent,
+            font=(THEME.font_ui, 10, "bold"),
+            justify="center",
+            cursor="hand2",
+            pady=4,
+        )
+        self._caption.pack(fill="x", padx=8, pady=(0, 8))
+        self._caption.bind("<Button-1>", lambda _e: self._open_url())
+
+        self._load_image()
+
+    def _load_image(self) -> None:
+        """Загрузить banner.jpg через Pillow и вписать в ``self._width``.
+
+        При любой ошибке показываем текстовую заглушку, чтобы блок
+        оставался кликабельным.
+        """
+        try:
+            from PIL import Image, ImageTk
+        except Exception:
+            log.warning("PIL недоступен — AdBanner в fallback-режиме")
+            self._show_fallback()
+            return
+
+        try:
+            from . import paths
+            img_path = paths.banner_image()
+            if not img_path.exists():
+                log.warning("banner.jpg не найден: %s", img_path)
+                self._show_fallback()
+                return
+
+            img = Image.open(str(img_path))
+            img.load()
+        except Exception:
+            log.exception("AdBanner: не удалось открыть banner.jpg")
+            self._show_fallback()
+            return
+
+        # масштабируем по ширине, сохраняя пропорции
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            self._show_fallback()
+            return
+        new_w = self._width
+        new_h = max(1, int(h * (new_w / w)))
+        try:
+            resample = Image.Resampling.LANCZOS  # Pillow >= 9.1
+        except AttributeError:  # pragma: no cover
+            resample = Image.LANCZOS  # type: ignore[attr-defined]
+        try:
+            img = img.resize((new_w, new_h), resample)
+        except Exception:
+            log.exception("AdBanner: resize failed")
+            self._show_fallback()
+            return
+
+        try:
+            self._photo = ImageTk.PhotoImage(img)
+        except Exception:
+            log.exception("AdBanner: PhotoImage failed")
+            self._show_fallback()
+            return
+
+        self._img_label.configure(image=self._photo, text="")
+
+    def _show_fallback(self) -> None:
+        """Текстовая плашка вместо картинки (кликабельная)."""
+        self._photo = None
+        self._img_label.configure(
+            image="",
+            text="🚀  ЗАБРАТЬ VPN",
+            compound="top",
+            fg=THEME.bg,
+            bg=THEME.accent,
+            font=(THEME.font_ui, 13, "bold"),
+            width=self._width,
+            height=80,
+        )
+
+    # ── public ──────────────────────────────────────────────────────────
+    def set_caption(self, text: str) -> None:
+        """Сменить текст подписи под баннером."""
+        self._caption.configure(text=text)
+
+    def set_url(self, url: str) -> None:
+        """Сменить URL, открываемый по клику."""
+        self._url = url
+
+    def reload_image(self) -> None:
+        """Перечитать banner.jpg (например, после смены темы/ресурсов)."""
+        self._load_image()
+
+    # ── internal ─────────────────────────────────────────────────────────
+    def _open_url(self) -> None:
+        """Открыть реферальную ссылку в браузере по умолчанию.
+
+        Сначала дёргаем пользовательский ``on_click`` (если задан), потом
+        сам ``webbrowser.open`` — он не блокирует и не падает на отсутствии
+        ассоциаций (просто возвращает False).
+        """
+        if self._on_click:
+            try:
+                self._on_click()
+            except Exception:
+                pass
+        try:
+            import webbrowser
+            webbrowser.open(self._url, new=2)
+        except Exception:
+            log.exception("AdBanner: webbrowser.open failed")
+
+
+# В widgets не должно быть логов на уровне модуля, но AdBanner использует
+# log.warning — подключаем lazily-совместимый модульный логгер.
+import logging  # noqa: E402
+log = logging.getLogger("dpibypass.widgets")

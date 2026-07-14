@@ -11,6 +11,8 @@ datas = [
     (str(ROOT / "resources" / "icon.png"), "resources"),
     # пасхалка — прикольная картинка, открывается 5 кликами по версии
     (str(ROOT / "resources" / "easter" / "1.jpg"), "resources/easter"),
+    # рекламный баннер VPN-режима (app/widgets.AdBanner)
+    (str(ROOT / "resources" / "banner.jpg"), "resources"),
 ]
 binaries = []
 hiddenimports = [
@@ -19,6 +21,8 @@ hiddenimports = [
     'app.controller',
     'app.proxy_runner',
     'app.zapret_runner',
+    'app.singbox_config',
+    'app.singbox_runner',
     'app.theme',
     'app.widgets',
     'app.ui_app',
@@ -65,6 +69,13 @@ for pkg in ('cryptography', 'pystray', 'PIL'):
 # Включаем все ресурсы zapret (bin + lists + bat-стратегии)
 zapret_root = ROOT / "resources" / "zapret"
 for path in zapret_root.rglob("*"):
+    if path.is_file():
+        rel_dir = path.parent.relative_to(ROOT)
+        datas.append((str(path), str(rel_dir)))
+
+# Ядро Sing-box (resources/singbox/sing-box.exe) для VPN-режима (TUN).
+singbox_root = ROOT / "resources" / "singbox"
+for path in singbox_root.rglob("*"):
     if path.is_file():
         rel_dir = path.parent.relative_to(ROOT)
         datas.append((str(path), str(rel_dir)))

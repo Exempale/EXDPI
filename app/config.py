@@ -149,8 +149,51 @@ GAME_FILTER_PORTS = {
     "gaming": "1024-65535",
 }
 
+# Допустимые значения app_mode — режим работы приложения целиком:
+#   "dpi" —zapret (DPI-обход) + tg-ws-proxy (+ опционально DoH/DoT).
+#           Работает точечно по доменам из списков, не трогает остальной трафик;
+#   "vpn" — глобальный VPN через Sing-box (TUN). Перехватывает ВСЁ, поэтому
+#           взаимоисключает с DPI-режимом: sing-box и winws не запускаются вместе.
+APP_MODES = ("dpi", "vpn")
+
 
 DEFAULT: Dict[str, Any] = {
+    # режим работы приложения: "dpi" или "vpn" (см. APP_MODES)
+    "app_mode": "dpi",
+    # VPN-ссылка для Sing-box (vless://... или ss://...) — то, что реально
+    # передаётся в sing-box при старте. Если пользователь вставил ссылку на
+    # подписку (http/https), сюда попадает УЖЕ выбранный из неё сервер.
+    # Используется только при app_mode == "vpn".
+    "vpn_uri": "",
+    # Исходная ссылка на подписку (http/https), если она была введена —
+    # хранится отдельно, чтобы поле ввода и обновление списка локаций
+    # переживали перезапуск программы. Пустая строка = подписка не задана.
+    "vpn_sub_url": "",
+    # Тег (имя) сервера, выбранного из подписки — чтобы после обновления
+    # списка локаций восстановить прошлый выбор пользователя.
+    "vpn_sub_tag": "",
+
+    # VPN (sing-box, app_mode == "vpn") — расширенные настройки:
+    # DNS-провайдер для резолва внутри туннеля (cloudflare/google/quad9/adguard)
+    "vpn_dns": "cloudflare",
+    # сетевой стек TUN: mixed (реком.) / gvisor / system
+    "vpn_tun_stack": "mixed",
+    # MTU TUN-интерфейса (576..9000; 1500 — безопасный дефолт)
+    "vpn_mtu": 1500,
+    # включить IPv6 внутри туннеля
+    "vpn_ipv6": False,
+    # kill-switch: strict_route режет трафик мимо туннеля (осторожно — на
+    # Windows может рубить весь трафик, если маршруты не идеальны)
+    "vpn_strict_route": False,
+    # блокировать QUIC (UDP/443): браузеры откатываются на TCP — часто чинит
+    # «сайт грузится, а видео/стрим нет» под VPN
+    "vpn_block_quic": False,
+    # резолвить и роутить .ru/.su/.рф напрямую (быстрее, меньше блокировок)
+    "vpn_ru_direct": True,
+    # авто-выбор самого быстрого сервера подписки по пингу
+    "vpn_autoselect_fastest": False,
+
+
     # tg-ws-proxy
     "proxy_enabled": True,
     "proxy_port": 1443,
@@ -221,6 +264,14 @@ def load() -> Dict[str, Any]:
     cfg["custom_domains"] = normalize_domain_list(cfg.get("custom_domains") or [])
     if cfg.get("game_mode") not in GAME_MODES:
         cfg["game_mode"] = "normal"
+    if cfg.get("app_mode") not in APP_MODES:
+        cfg["app_mode"] = "dpi"
+    if not isinstance(cfg.get("vpn_uri"), str):
+        cfg["vpn_uri"] = ""
+    if not isinstance(cfg.get("vpn_sub_url"), str):
+        cfg["vpn_sub_url"] = ""
+    if not isinstance(cfg.get("vpn_sub_tag"), str):
+        cfg["vpn_sub_tag"] = ""
     if not isinstance(cfg.get("theme"), str) or cfg["theme"] not in ("dark", "light"):
         cfg["theme"] = "dark"
     if cfg.get("securedns_protocol") not in ("doh", "dot"):
@@ -233,6 +284,19 @@ def load() -> Dict[str, Any]:
             cfg[bool_key] = bool(DEFAULT[bool_key])
     if not isinstance(cfg.get("zapret_strategy_auto_result"), str):
         cfg["zapret_strategy_auto_result"] = ""
+    if cfg.get("vpn_tun_stack") not in ("mixed", "gvisor", "system"):
+        cfg["vpn_tun_stack"] = "mixed"
+    if not isinstance(cfg.get("vpn_dns"), str) or not cfg["vpn_dns"]:
+        cfg["vpn_dns"] = "cloudflare"
+    try:
+        _m = int(cfg.get("vpn_mtu", 1500))
+    except (TypeError, ValueError):
+        _m = 1500
+    cfg["vpn_mtu"] = _m if 576 <= _m <= 9000 else 1500
+    for _bk in ("vpn_ipv6", "vpn_strict_route", "vpn_block_quic",
+                "vpn_ru_direct", "vpn_autoselect_fastest"):
+        if not isinstance(cfg.get(_bk), bool):
+            cfg[_bk] = bool(DEFAULT[_bk])
     return cfg
 
 

@@ -663,7 +663,10 @@ class SettingsWindow(tk.Toplevel):
         except Exception:
             pass
 
-        self._build()
+        try:
+            self._build()
+        except Exception:
+            self._build_failed_fallback()
 
         # размер окна — фиксированный «удобный», но не выше экрана.
         # Содержимое всё равно скроллится, кнопки сохранить/отмена и кредит
@@ -690,103 +693,79 @@ class SettingsWindow(tk.Toplevel):
         outer = tk.Frame(self, bg=THEME.bg)
         outer.pack(fill="both", expand=True)
 
-        # ── header (зафиксирован сверху) ────────────────────────────
+        # ── header (сверху) ─────────────────────────────────────────
         header = tk.Frame(outer, bg=THEME.bg, padx=22, pady=20)
         header.pack(side="top", fill="x")
-        IconButton(
-            header, glyph="back", size=24,
-            on_click=self._cancel, tooltip="Назад",
-        ).pack(side="left")
         title_box = tk.Frame(header, bg=THEME.bg)
-        title_box.pack(side="left", padx=(12, 0))
-        tk.Label(
-            title_box, text="НАСТРОЙКИ",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 8, "bold"),
-            anchor="w",
-        ).pack(anchor="w")
-        tk.Label(
-            title_box, text="EXDPI",
-            fg=THEME.text_primary, bg=THEME.bg,
-            font=(THEME.font_ui, 13, "bold"),
-            anchor="w",
-        ).pack(anchor="w")
+        title_box.pack(side="left")
+        tk.Label(title_box, text="НАСТРОЙКИ", fg=THEME.text_secondary, bg=THEME.bg,
+                 font=(THEME.font_ui, 8, "bold"), anchor="w").pack(anchor="w")
+        tk.Label(title_box, text="EXDPI", fg=THEME.text_primary, bg=THEME.bg,
+                 font=(THEME.font_ui, 13, "bold"), anchor="w").pack(anchor="w")
 
-        # ── footer (зафиксирован снизу: кнопки + кредит) ───────────
+        # ── footer (снизу: кнопки + кредит) ─────────────────────────
         footer = tk.Frame(outer, bg=THEME.bg, padx=22, pady=14)
         footer.pack(side="bottom", fill="x")
-        # тонкая разделительная линия над футером
         tk.Frame(outer, bg=THEME.border, height=1).pack(side="bottom", fill="x")
-
         buttons = tk.Frame(footer, bg=THEME.bg)
         buttons.pack(side="bottom", fill="x", pady=(8, 0))
         credit = tk.Frame(footer, bg=THEME.bg)
         credit.pack(side="bottom", fill="x")
-        tk.Label(
-            credit, text="автор · Exempale",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 9, "bold"),
-        ).pack(anchor="center")
-        tk.Label(
-            credit,
-            text="сборка поверх zapret-discord-youtube и tg-ws-proxy",
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8),
-        ).pack(anchor="center", pady=(2, 0))
-        tk.Label(
-            credit,
-            text="ориг. авторы: Flowseal / bol-van · tg-ws-proxy",
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8),
-        ).pack(anchor="center")
-
-        cancel = tk.Label(
-            buttons, text="отмена",
-            fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 10), cursor="hand2",
-        )
+        tk.Label(credit, text="автор · Exempale", fg=THEME.text_secondary, bg=THEME.bg,
+                 font=(THEME.font_ui, 9, "bold")).pack(anchor="center")
+        tk.Label(credit, text="сборка поверх zapret-discord-youtube и tg-ws-proxy",
+                 fg=THEME.text_muted, bg=THEME.bg,
+                 font=(THEME.font_ui, 8)).pack(anchor="center", pady=(2, 0))
+        tk.Label(credit, text="ориг. авторы: Flowseal / bol-van · tg-ws-proxy",
+                 fg=THEME.text_muted, bg=THEME.bg,
+                 font=(THEME.font_ui, 8)).pack(anchor="center")
+        cancel = tk.Label(buttons, text="отмена", fg=THEME.text_secondary, bg=THEME.bg,
+                          font=(THEME.font_ui, 10), cursor="hand2")
         cancel.pack(side="left", padx=(2, 0))
         cancel.bind("<Button-1>", lambda _e: self._cancel())
-
-        save = tk.Label(
-            buttons, text="  сохранить  ",
-            fg=THEME.bg, bg=THEME.accent,
-            font=(THEME.font_ui, 10, "bold"),
-            cursor="hand2", padx=18, pady=8,
-        )
+        save = tk.Label(buttons, text="  сохранить  ", fg=THEME.bg, bg=THEME.accent,
+                        font=(THEME.font_ui, 10, "bold"), cursor="hand2", padx=18, pady=8)
         save.pack(side="right")
         save.bind("<Button-1>", lambda _e: self._save())
         save.bind("<Enter>", lambda _e: save.configure(bg=THEME.accent_dim))
         save.bind("<Leave>", lambda _e: save.configure(bg=THEME.accent))
 
-        # ── скроллируемое тело (между header и footer) ─────────────
+        # ── панель вкладок [ DPI | VPN | Общее ] ────────────────────
+        tabbar = tk.Frame(outer, bg=THEME.bg, padx=22, pady=0)
+        tabbar.pack(side="top", fill="x", pady=(0, 2))
+        seg = tk.Frame(tabbar, bg=THEME.card, padx=2, pady=2)
+        seg.pack(side="left")
+        self._tab_btns = {}
+        for tid, tlabel in (("dpi", "DPI"), ("vpn", "VPN"), ("gen", "Общее")):
+            b = tk.Label(seg, text=" " + tlabel + " ", bg=THEME.card,
+                         fg=THEME.text_secondary, font=(THEME.font_ui, 9, "bold"),
+                         padx=14, pady=4, cursor="hand2")
+            b.pack(side="left", padx=1)
+            b.bind("<Button-1>", lambda _e, t=tid: self._show_tab(t))
+            self._tab_btns[tid] = b
+
+        # ── скроллируемое тело ──────────────────────────────────────
         mid = tk.Frame(outer, bg=THEME.bg)
         mid.pack(side="top", fill="both", expand=True)
-
-        canvas = tk.Canvas(
-            mid, bg=THEME.bg, highlightthickness=0, bd=0,
-        )
+        canvas = tk.Canvas(mid, bg=THEME.bg, highlightthickness=0, bd=0)
         canvas.pack(side="left", fill="both", expand=True)
         sb = ttk.Scrollbar(mid, orient="vertical", command=canvas.yview)
         sb.pack(side="right", fill="y")
         canvas.configure(yscrollcommand=sb.set)
-
         body = tk.Frame(canvas, bg=THEME.bg, padx=22, pady=4)
         body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+        self._canvas = canvas
 
-        def _on_body_configure(_e: tk.Event) -> None:
+        def _on_body_configure(_e):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
-        def _on_canvas_configure(e: tk.Event) -> None:
+        def _on_canvas_configure(e):
             canvas.itemconfigure(body_id, width=e.width)
 
         body.bind("<Configure>", _on_body_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
 
-        # колесо мыши: привязываем рекурсивно к окну и всем дочерним виджетам
-        # — bind_all + Enter/Leave срывается, когда курсор уходит на дочерний
-        # виджет и Tk шлёт <Leave> на родителя.
-        def _on_wheel(e: tk.Event) -> str:
+        def _on_wheel(e):
             try:
                 delta = int(-1 * (e.delta / 120))
             except Exception:
@@ -794,7 +773,7 @@ class SettingsWindow(tk.Toplevel):
             canvas.yview_scroll(delta, "units")
             return "break"
 
-        def _bind_wheel_recursive(widget: tk.Misc) -> None:
+        def _bind_wheel_recursive(widget):
             try:
                 widget.bind("<MouseWheel>", _on_wheel, add="+")
                 widget.bind("<Button-4>", _on_wheel, add="+")
@@ -805,24 +784,187 @@ class SettingsWindow(tk.Toplevel):
                 _bind_wheel_recursive(ch)
 
         self._bind_wheel_recursive = _bind_wheel_recursive
-        self._bind_wheel_recursive(self)
 
-        # zapret strategy (+ спец-пункт «Авто»)
+        # три контейнера-вкладки (пакуется только активный)
+        self._dpi_box = tk.Frame(body, bg=THEME.bg)
+        self._vpn_box = tk.Frame(body, bg=THEME.bg)
+        self._gen_box = tk.Frame(body, bg=THEME.bg)
+        self._tabs = {"dpi": self._dpi_box, "vpn": self._vpn_box, "gen": self._gen_box}
+
+        # Каждую вкладку строим изолированно: сбой одной (напр. из-за окружения
+        # или ttk) больше не оставляет окно пустым — в проблемной вкладке
+        # показываем полный traceback, остальные строятся нормально.
+        for _tid, _box, _builder in (
+            ("dpi", self._dpi_box, self._build_dpi_tab),
+            ("vpn", self._vpn_box, self._build_vpn_tab),
+            ("gen", self._gen_box, self._build_gen_tab),
+        ):
+            try:
+                _builder(_box)
+            except Exception:
+                self._render_tab_error(_box, _tid)
+
+        default_tab = "vpn" if str(self.cfg.get("app_mode", "dpi")) == "vpn" else "dpi"
+        try:
+            self._show_tab(default_tab)
+        except Exception:
+            try:
+                self._tabs.get(default_tab, self._dpi_box).pack(fill="x")
+            except Exception:
+                pass
+
+        # первая отрисовка Canvas+create_window в tkinter — гонка: ширина
+        # окна-тела и scrollregion не успевают проставиться до маппинга,
+        # из-за чего тело настроек выглядело пустым. Принудительно
+        # синхронизируем размеры несколько раз после старта.
+        def _sync_scroll() -> None:
+            try:
+                self.update_idletasks()
+                cw = canvas.winfo_width()
+                if cw <= 1:
+                    cw = self.WIDTH - 40
+                canvas.itemconfigure(body_id, width=cw)
+                self.update_idletasks()
+                bbox = canvas.bbox('all')
+                if bbox:
+                    canvas.configure(scrollregion=bbox)
+            except Exception:
+                pass
+        self._sync_scroll = _sync_scroll
+        for _d in (0, 32, 120, 300):
+            try:
+                self.after(_d, _sync_scroll)
+            except Exception:
+                pass
+
+    def _render_tab_error(self, box, tab_id: str) -> None:
+        """Показать полный traceback прямо в теле вкладки вместо пустоты."""
+        import traceback as _tb
+        import logging as _logging
+        text = _tb.format_exc()
+        try:
+            _logging.getLogger("dpibypass.settings").error(
+                "settings tab %s build failed:\n%s", tab_id, text
+            )
+        except Exception:
+            pass
+        tk.Label(
+            box, text=f"Не удалось построить вкладку «{tab_id}»:",
+            fg=THEME.danger, bg=THEME.bg, font=(THEME.font_ui, 10, "bold"),
+            anchor="w", justify="left",
+        ).pack(fill="x", pady=(8, 4))
+        t = tk.Text(
+            box, height=12, bg=THEME.card, fg=THEME.text_primary,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightbackground=THEME.border, wrap="word",
+            font=("Consolas", 9), padx=8, pady=6,
+        )
+        t.pack(fill="both", expand=True)
+        t.insert("1.0", text)
+        t.configure(state="disabled")
+
+    def _build_failed_fallback(self) -> None:
+        """Если _build упал целиком — окно не пустое, показываем ошибку."""
+        import traceback as _tb
+        import logging as _logging
+        text = _tb.format_exc()
+        try:
+            _logging.getLogger("dpibypass.settings").error(
+                "settings _build failed:\n%s", text
+            )
+        except Exception:
+            pass
+        for ch in list(self.winfo_children()):
+            try:
+                ch.destroy()
+            except Exception:
+                pass
+        outer = tk.Frame(self, bg=THEME.bg, padx=16, pady=16)
+        outer.pack(fill="both", expand=True)
+        tk.Label(
+            outer, text="Не удалось открыть настройки", fg=THEME.danger,
+            bg=THEME.bg, font=(THEME.font_ui, 13, "bold"), anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        tk.Label(
+            outer, text="Полный текст ошибки (скопируй и пришли в чат):",
+            fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 9), anchor="w",
+        ).pack(fill="x", pady=(0, 8))
+        frame = tk.Frame(outer, bg=THEME.bg)
+        frame.pack(fill="both", expand=True)
+        t = tk.Text(
+            frame, bg=THEME.card, fg=THEME.text_primary, relief="flat", bd=0,
+            highlightthickness=1, highlightbackground=THEME.border, wrap="word",
+            font=("Consolas", 9), padx=8, pady=6,
+        )
+        sb = ttk.Scrollbar(frame, orient="vertical", command=t.yview)
+        t.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        t.pack(side="left", fill="both", expand=True)
+        t.insert("1.0", text)
+        t.configure(state="disabled")
+        btnrow = tk.Frame(outer, bg=THEME.bg)
+        btnrow.pack(fill="x", pady=(8, 0))
+
+        def _copy():
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(text)
+                self.update()
+            except Exception:
+                pass
+
+        cp = tk.Label(
+            btnrow, text="  копировать  ", fg=THEME.bg, bg=THEME.accent,
+            font=(THEME.font_ui, 10, "bold"), cursor="hand2", padx=14, pady=6,
+        )
+        cp.pack(side="left")
+        cp.bind("<Button-1>", lambda _e: _copy())
+        cl = tk.Label(
+            btnrow, text="закрыть", fg=THEME.text_secondary, bg=THEME.bg,
+            font=(THEME.font_ui, 10), cursor="hand2", padx=10, pady=6,
+        )
+        cl.pack(side="right")
+        cl.bind("<Button-1>", lambda _e: self._cancel())
+
+    def _show_tab(self, name: str) -> None:
+        """Показать одну вкладку настроек, спрятать остальные."""
+        for _tid, box in self._tabs.items():
+            try:
+                box.pack_forget()
+            except Exception:
+                pass
+        box = self._tabs.get(name) or self._dpi_box
+        box.pack(fill="x")
+        for tid, b in self._tab_btns.items():
+            if tid == name:
+                b.configure(bg=THEME.accent, fg=THEME.bg)
+            else:
+                b.configure(bg=THEME.card, fg=THEME.text_secondary)
+        try:
+            self._bind_wheel_recursive(self)
+        except Exception:
+            pass
+        try:
+            self._canvas.yview_moveto(0.0)
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        except Exception:
+            pass
+
+    # ── вкладка DPI ──────────────────────────────────────────────────
+    def _build_dpi_tab(self, body) -> None:
         strategy_value = str(self.cfg.get("zapret_strategy", "general (ALT10).bat"))
         strategy_display = AUTO_STRATEGY_LABEL if is_auto(strategy_value) else strategy_value
         self._strategy = _Select(
             body, "Стратегия обхода (zapret)",
-            [AUTO_STRATEGY_LABEL] + list_strategies(),
-            strategy_display,
+            [AUTO_STRATEGY_LABEL] + list_strategies(), strategy_display,
         )
         self._strategy.pack(fill="x", pady=(0, 2))
         auto_row = tk.Frame(body, bg=THEME.bg)
         auto_row.pack(fill="x", pady=(0, 14))
         self._auto_hint = tk.Label(
-            auto_row,
-            text=self._auto_result_hint(),
-            fg=THEME.text_muted, bg=THEME.bg,
-            font=(THEME.font_ui, 8), anchor="w",
+            auto_row, text=self._auto_result_hint(),
+            fg=THEME.text_muted, bg=THEME.bg, font=(THEME.font_ui, 8), anchor="w",
         )
         self._auto_hint.pack(side="left")
         auto_link = tk.Label(
@@ -833,7 +975,6 @@ class SettingsWindow(tk.Toplevel):
         auto_link.pack(side="right")
         auto_link.bind("<Button-1>", lambda _e: self._open_autostrategy())
 
-        # режим работы запрета (обычный вс игровой)
         self._game_mode = _ModePicker(
             body, "Режим запрета",
             "Обычный — фильтр только по стандартным TLS/HTTP/QUIC портам. "
@@ -843,63 +984,50 @@ class SettingsWindow(tk.Toplevel):
         )
         self._game_mode.pack(fill="x", pady=(0, 14))
 
-        # proxy port
         self._port = _Field(
-            body, "Порт прокси",
-            str(self.cfg.get("proxy_port", 1443)),
+            body, "Порт прокси", str(self.cfg.get("proxy_port", 1443)),
             validate=lambda v: v.isdigit() and 1 <= int(v) <= 65535,
         )
         self._port.pack(fill="x", pady=(0, 14))
 
-        # proxy host
         self._host = _Field(
-            body, "Хост (только локально)",
-            str(self.cfg.get("proxy_host", "127.0.0.1")),
+            body, "Хост (только локально)", str(self.cfg.get("proxy_host", "127.0.0.1")),
             validate=lambda v: bool(re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", v)),
         )
         self._host.pack(fill="x", pady=(0, 14))
 
-        # secret (read-only display, regen button)
         secret_row = tk.Frame(body, bg=THEME.bg)
         secret_row.pack(fill="x", pady=(0, 14))
         self._secret = _Field(
-            secret_row, "Секрет (32 hex)",
-            str(self.cfg.get("proxy_secret", "")),
+            secret_row, "Секрет (32 hex)", str(self.cfg.get("proxy_secret", "")),
             readonly=True,
         )
         self._secret.pack(fill="x")
         regen = tk.Label(
             secret_row, text="сгенерировать новый",
             fg=THEME.accent_dim, bg=THEME.bg,
-            font=(THEME.font_ui, 9, "underline"),
-            cursor="hand2",
+            font=(THEME.font_ui, 9, "underline"), cursor="hand2",
         )
         regen.pack(anchor="e", pady=(4, 0))
         regen.bind("<Button-1>", lambda _e: self._regen_secret())
 
-        # пресеты готовых доменов (config lists)
         self._domains = _DomainsBox(
-            body,
-            "Свои домены для обхода",
+            body, "Свои домены для обхода",
             "Hostname по одному на строке или через ; . Попадают в "
             "list-general-user.txt zapret. Изменения применяются при следующем "
             "включении EXDPI.",
             normalize_domain_list(self.cfg.get("custom_domains") or []),
         )
-
         self._preset = _PresetPicker(
-            body,
-            "Готовые конфиг-листы",
+            body, "Готовые конфиг-листы",
             "Подборки доменов одним кликом: ИИ, игры, соцсети, РФ-блоки. "
             "«Свой набор» — пользовательский список (сохраняется отдельно).",
             value=str(self.cfg.get("domain_preset", "custom")),
             domains_box=self._domains,
         )
         self._preset.pack(fill="x", pady=(0, 8))
-
         self._domains.pack(fill="x", pady=(0, 14))
 
-        # toggles
         self._zapret_on = _CheckRow(
             body, "DPI bypass (zapret)",
             "Запускать winws.exe в фоне для обхода DPI.",
@@ -914,43 +1042,6 @@ class SettingsWindow(tk.Toplevel):
         )
         self._proxy_on.pack(fill="x", pady=(0, 8))
 
-        # ── разделитель ─────────────────────────────────────────────
-        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
-
-        # автозапуск с Windows
-        self._autostart = _CheckRow(
-            body, "Запускать с Windows",
-            "Автозапуск при входе в систему через Планировщик заданий — "
-            "сразу с правами администратора, без запроса UAC.",
-            bool(self.cfg.get("autostart_with_windows", False)),
-        )
-        self._autostart.pack(fill="x", pady=(0, 8))
-
-        # сворачивать в трей по крестику
-        self._tray = _CheckRow(
-            body, "Сворачивать в трей",
-            "По крестику окно прячется в трей вместо выхода.",
-            bool(self.cfg.get("minimize_to_tray", True)),
-        )
-        self._tray.pack(fill="x", pady=(0, 8))
-
-        # запускать свёрнутым
-        self._start_min = _CheckRow(
-            body, "Запускать свёрнутым",
-            "При старте программа сразу уходит в трей.",
-            bool(self.cfg.get("start_minimized", False)),
-        )
-        self._start_min.pack(fill="x", pady=(0, 8))
-
-        # уведомления Windows
-        self._notify = _CheckRow(
-            body, "Уведомления Windows",
-            "Тосты о включении/выключении обхода, ошибках и обновлениях.",
-            bool(self.cfg.get("notifications_enabled", True)),
-        )
-        self._notify.pack(fill="x", pady=(0, 8))
-
-        # ── разделитель: защищённый DNS ─────────────────────────────
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
         self._securedns_on = _CheckRow(
@@ -990,11 +1081,123 @@ class SettingsWindow(tk.Toplevel):
             bool(self.cfg.get("securedns_set_system", True)),
         )
         self._dns_system.pack(fill="x", pady=(0, 8))
+        tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
 
-        # ── разделитель ─────────────────────────────────────────────
+    # ── вкладка VPN ──────────────────────────────────────────────────
+    def _build_vpn_tab(self, body) -> None:
+        tk.Label(
+            body,
+            text="Настройки режима VPN (sing-box). Применяются при следующем "
+                 "подключении. Если после включения VPN пропадает интернет — "
+                 "поставьте стек «Mixed», MTU 1500 и выключите kill-switch.",
+            fg=THEME.text_muted, bg=THEME.bg, font=(THEME.font_ui, 9),
+            anchor="w", wraplength=460, justify="left",
+        ).pack(fill="x", pady=(2, 12))
+
+        self._vpn_dns_labels = securedns.provider_labels()
+        vpn_dns_val = str(self.cfg.get("vpn_dns", "cloudflare"))
+        self._vpn_dns = _Select(
+            body, "DNS-провайдер (в туннеле)",
+            list(self._vpn_dns_labels.values()),
+            self._vpn_dns_labels.get(vpn_dns_val, self._vpn_dns_labels["cloudflare"]),
+        )
+        self._vpn_dns.pack(fill="x", pady=(0, 14))
+        self._vpn_dns_rev = {v: k for k, v in self._vpn_dns_labels.items()}
+
+        self._vpn_stack_labels = {
+            "mixed": "Mixed (рекомендуется)", "gvisor": "gVisor", "system": "System",
+        }
+        stack_val = str(self.cfg.get("vpn_tun_stack", "mixed"))
+        self._vpn_stack = _Select(
+            body, "Сетевой стек TUN",
+            list(self._vpn_stack_labels.values()),
+            self._vpn_stack_labels.get(stack_val, self._vpn_stack_labels["mixed"]),
+        )
+        self._vpn_stack.pack(fill="x", pady=(0, 14))
+        self._vpn_stack_rev = {v: k for k, v in self._vpn_stack_labels.items()}
+
+        self._vpn_mtu = _Field(
+            body, "MTU туннеля (576–9000)", str(self.cfg.get("vpn_mtu", 1500)),
+            validate=lambda v: v.isdigit() and 576 <= int(v) <= 9000,
+        )
+        self._vpn_mtu.pack(fill="x", pady=(0, 14))
+
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(4, 10))
+
+        self._vpn_ru_direct = _CheckRow(
+            body, "Россия — напрямую",
+            "Домены .ru/.su/.рф идут мимо VPN (быстрее, меньше блокировок). "
+            "Остальное — через туннель.",
+            bool(self.cfg.get("vpn_ru_direct", True)),
+        )
+        self._vpn_ru_direct.pack(fill="x", pady=(0, 8))
+
+        self._vpn_block_quic = _CheckRow(
+            body, "Блокировать QUIC",
+            "Режет UDP/443 — браузер откатывается на TCP. Часто чинит "
+            "«сайт открылся, а видео/стрим не идёт» под VPN.",
+            bool(self.cfg.get("vpn_block_quic", False)),
+        )
+        self._vpn_block_quic.pack(fill="x", pady=(0, 8))
+
+        self._vpn_ipv6 = _CheckRow(
+            body, "IPv6 в туннеле",
+            "Включить IPv6 внутри VPN. Оставьте выключенным, если сервер/"
+            "провайдер не поддерживает IPv6.",
+            bool(self.cfg.get("vpn_ipv6", False)),
+        )
+        self._vpn_ipv6.pack(fill="x", pady=(0, 8))
+
+        self._vpn_autoselect = _CheckRow(
+            body, "Авто-выбор быстрейшего",
+            "После замера пинга автоматически подключаться к самому быстрому "
+            "серверу из подписки.",
+            bool(self.cfg.get("vpn_autoselect_fastest", False)),
+        )
+        self._vpn_autoselect.pack(fill="x", pady=(0, 8))
+
+        self._vpn_strict = _CheckRow(
+            body, "Kill-switch (strict route)",
+            "Строгая маршрутизация: если туннель упал — трафик НЕ пойдёт мимо "
+            "VPN. Осторожно: на Windows может рубить весь трафик.",
+            bool(self.cfg.get("vpn_strict_route", False)),
+        )
+        self._vpn_strict.pack(fill="x", pady=(0, 8))
+        tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
+
+    # ── вкладка Общее ────────────────────────────────────────────────
+    def _build_gen_tab(self, body) -> None:
+        self._autostart = _CheckRow(
+            body, "Запускать с Windows",
+            "Автозапуск при входе в систему через Планировщик заданий — "
+            "сразу с правами администратора, без запроса UAC.",
+            bool(self.cfg.get("autostart_with_windows", False)),
+        )
+        self._autostart.pack(fill="x", pady=(0, 8))
+
+        self._tray = _CheckRow(
+            body, "Сворачивать в трей",
+            "По крестику окно прячется в трей вместо выхода.",
+            bool(self.cfg.get("minimize_to_tray", True)),
+        )
+        self._tray.pack(fill="x", pady=(0, 8))
+
+        self._start_min = _CheckRow(
+            body, "Запускать свёрнутым",
+            "При старте программа сразу уходит в трей.",
+            bool(self.cfg.get("start_minimized", False)),
+        )
+        self._start_min.pack(fill="x", pady=(0, 8))
+
+        self._notify = _CheckRow(
+            body, "Уведомления Windows",
+            "Тосты о включении/выключении обхода, ошибках и обновлениях.",
+            bool(self.cfg.get("notifications_enabled", True)),
+        )
+        self._notify.pack(fill="x", pady=(0, 8))
+
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
-        # тема интерфейса
         self._theme = _ThemePicker(
             body, "Тема интерфейса",
             "Цветовая схема приложения. Применяется сразу.",
@@ -1002,10 +1205,8 @@ class SettingsWindow(tk.Toplevel):
         )
         self._theme.pack(fill="x", pady=(0, 8))
 
-        # ── разделитель: режим разработчика ─────────────────────────
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
-        # переключатель «Для разработчиков»: показывает/прячет сервисный раздел
         self._dev_mode = _CheckRow(
             body, "Для разработчиков",
             "Сервисные инструменты: логи, импорт/экспорт настроек, мастер "
@@ -1015,21 +1216,17 @@ class SettingsWindow(tk.Toplevel):
         )
         self._dev_mode.pack(fill="x", pady=(0, 8))
 
-        # контейнер сервисного раздела — пакуется только когда dev-режим включён
         self._dev_box = tk.Frame(body, bg=THEME.bg)
-
         tk.Label(
             self._dev_box, text="ДЛЯ РАЗРАБОТЧИКОВ",
             fg=THEME.text_secondary, bg=THEME.bg,
             font=(THEME.font_ui, 8, "bold"), anchor="w",
         ).pack(fill="x", pady=(2, 6))
 
-        def _service_link(text: str, handler: Callable[[], None]) -> None:
+        def _service_link(text, handler):
             lbl = tk.Label(
-                self._dev_box, text=text,
-                fg=THEME.accent_dim, bg=THEME.bg,
-                font=(THEME.font_ui, 10, "underline"),
-                cursor="hand2", anchor="w",
+                self._dev_box, text=text, fg=THEME.accent_dim, bg=THEME.bg,
+                font=(THEME.font_ui, 10, "underline"), cursor="hand2", anchor="w",
             )
             lbl.pack(fill="x", pady=(0, 6))
             lbl.bind("<Button-1>", lambda _e: handler())
@@ -1040,11 +1237,9 @@ class SettingsWindow(tk.Toplevel):
         if self._on_run_wizard is not None:
             _service_link("мастер первого запуска", self._run_wizard)
 
-        # кнопка запуска service.bat (диспетчер/меню оригинального zapret)
         run_bat = tk.Label(
             self._dev_box, text="  запустить service.bat  ",
-            fg=THEME.bg, bg=THEME.accent,
-            font=(THEME.font_ui, 10, "bold"),
+            fg=THEME.bg, bg=THEME.accent, font=(THEME.font_ui, 10, "bold"),
             cursor="hand2", padx=14, pady=7,
         )
         run_bat.pack(anchor="w", pady=(4, 2))
@@ -1060,16 +1255,7 @@ class SettingsWindow(tk.Toplevel):
 
         if bool(self.cfg.get("developer_mode", False)):
             self._dev_box.pack(fill="x", pady=(2, 0))
-
-        # небольшой отступ снизу скролла, чтобы последний пункт не липал
-        # к разделителю над футером
         tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
-
-        # перепривязать колесо мыши к новым дочерним виджетам
-        try:
-            self._bind_wheel_recursive(self)
-        except Exception:
-            pass
 
     # actions
     def _regen_secret(self) -> None:
@@ -1086,10 +1272,12 @@ class SettingsWindow(tk.Toplevel):
         """Собрать значения всех виджетов в dict (или None при ошибке)."""
         port_s = self._port.get()
         if not port_s.isdigit() or not (1 <= int(port_s) <= 65535):
+            self._show_tab("dpi")
             self._shake(self._port)
             return None
         host = self._host.get()
         if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+            self._show_tab("dpi")
             self._shake(self._host)
             return None
 
@@ -1118,6 +1306,20 @@ class SettingsWindow(tk.Toplevel):
         provider_rev = {v: k for k, v in self._dns_provider_labels.items()}
         out["securedns_provider"] = provider_rev.get(self._dns_provider.get(), "cloudflare")
         out["securedns_set_system"] = self._dns_system.get()
+        # VPN-настройки
+        out["vpn_dns"] = self._vpn_dns_rev.get(self._vpn_dns.get(), "cloudflare")
+        out["vpn_tun_stack"] = self._vpn_stack_rev.get(self._vpn_stack.get(), "mixed")
+        mtu_s = self._vpn_mtu.get()
+        if not mtu_s.isdigit() or not (576 <= int(mtu_s) <= 9000):
+            self._show_tab("vpn")
+            self._shake(self._vpn_mtu)
+            return None
+        out["vpn_mtu"] = int(mtu_s)
+        out["vpn_ipv6"] = self._vpn_ipv6.get()
+        out["vpn_strict_route"] = self._vpn_strict.get()
+        out["vpn_block_quic"] = self._vpn_block_quic.get()
+        out["vpn_ru_direct"] = self._vpn_ru_direct.get()
+        out["vpn_autoselect_fastest"] = self._vpn_autoselect.get()
         return out
 
     def _save(self) -> None:
@@ -1224,6 +1426,29 @@ class SettingsWindow(tk.Toplevel):
         self.destroy()
 
     def _shake(self, w: tk.Widget) -> None:
-        x = w.winfo_x()
-        for i, dx in enumerate([6, -6, 4, -4, 2, -2, 0]):
-            self.after(40 * i, lambda d=dx: w.place_configure(x=x + d) if hasattr(w, "place_info") else None)
+        """Подсветить проблемное поле вспышкой красной рамки.
+
+        Раньше здесь дёргался ``place_configure`` по x, но виджеты
+        упакованы через ``pack`` — вызов ``place`` выбивал поле из
+        layout и не возвращал обратно (поле «пропадало»). Теперь просто
+        мигаем цветом рамки контейнера — безопасно и заметно.
+        """
+        target = None
+        for attr in ("_entry", "_txt", "_cb"):
+            target = getattr(w, attr, None)
+            if target is not None:
+                break
+        if target is None:
+            target = w
+        try:
+            orig = target.cget("highlightbackground")
+        except Exception:
+            orig = THEME.border
+        def _set(color):
+            try:
+                target.configure(highlightbackground=color, highlightcolor=color)
+            except Exception:
+                pass
+        seq = [THEME.danger, THEME.border, THEME.danger, orig or THEME.border]
+        for i, color in enumerate(seq):
+            self.after(90 * i, lambda c=color: _set(c))

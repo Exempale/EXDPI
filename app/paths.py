@@ -54,6 +54,16 @@ def banner_image() -> Path:
     return resource_root() / "banner.jpg"
 
 
+def banner_dark_image() -> Path:
+    """Тёмный баннер (resources/banner_dark.png) для VPN-режима в тёмной теме."""
+    return resource_root() / "banner_dark.png"
+
+
+def banner_light_image() -> Path:
+    """Светлый баннер (resources/banner_light.png) для VPN-режима в светлой теме."""
+    return resource_root() / "banner_light.png"
+
+
 def singbox_root() -> Path:
     """Папка с ядром Sing-box (resources/singbox/sing-box.exe)."""
     return resource_root() / "singbox"

@@ -856,7 +856,7 @@ class AdBanner(tk.Frame):
         self._load_image()
 
     def _load_image(self) -> None:
-        """Загрузить banner.jpg через Pillow и вписать в ``self._width``.
+        """Загрузить баннер в зависимости от темы (dark/light) через Pillow.
 
         При любой ошибке показываем текстовую заглушку, чтобы блок
         оставался кликабельным.
@@ -870,16 +870,20 @@ class AdBanner(tk.Frame):
 
         try:
             from . import paths
-            img_path = paths.banner_image()
+            # Выбираем баннер в зависимости от текущей темы
+            if THEME.name == "dark":
+                img_path = paths.banner_dark_image()
+            else:
+                img_path = paths.banner_light_image()
             if not img_path.exists():
-                log.warning("banner.jpg не найден: %s", img_path)
+                log.warning("banner not found: %s", img_path)
                 self._show_fallback()
                 return
 
             img = Image.open(str(img_path))
             img.load()
         except Exception:
-            log.exception("AdBanner: не удалось открыть banner.jpg")
+            log.exception("AdBanner: не удалось открыть баннер")
             self._show_fallback()
             return
 

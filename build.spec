@@ -11,8 +11,9 @@ datas = [
     (str(ROOT / "resources" / "icon.png"), "resources"),
     # пасхалка — прикольная картинка, открывается 5 кликами по версии
     (str(ROOT / "resources" / "easter" / "1.jpg"), "resources/easter"),
-    # рекламный баннер VPN-режима (app/widgets.AdBanner)
-    (str(ROOT / "resources" / "banner.jpg"), "resources"),
+    # рекламные баннеры VPN-режима (app/widgets.AdBanner) — выбираются по теме
+    (str(ROOT / "resources" / "banner_dark.png"), "resources"),
+    (str(ROOT / "resources" / "banner_light.png"), "resources"),
 ]
 binaries = []
 hiddenimports = [

@@ -145,7 +145,7 @@ class App(tk.Tk):
         высотой экрана, чтобы окно не уезжало за край на ноутбуках.
         """
         if self.ctl.is_vpn:
-            w, h, min_w, min_h = 630, 830, 560, 700
+            w, h, min_w, min_h = 600, 850, 560, 700
         else:
             w, h, min_w, min_h = 400, 440, 400, 420
         try:
@@ -1069,6 +1069,60 @@ class App(tk.Tk):
         self._hicon_small = hicon_small
         self._hicon_big = hicon_big
 
+    # ── Win32 window visibility ─────────────────────────────────────
+    def _win32_hwnd(self) -> Optional[int]:
+        """HWND верхнеуровневого окна через WinAPI."""
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            GA_ROOT = 2
+            wid = self.winfo_id()
+            hwnd = user32.GetAncestor(wid, GA_ROOT) or wid
+            return hwnd
+        except Exception:
+            return None
+
+    def _win32_hide(self) -> None:
+        """Скрыть окно через WinAPI ShowWindow(SW_HIDE).
+
+        В отличие от Tk withdraw(), не пересоздаёт запись в панели задач —
+        Windows 10/11 оставляет одну иконку, и при показе она не дублируется.
+        """
+        hwnd = self._win32_hwnd()
+        if hwnd:
+            try:
+                import ctypes
+                SW_HIDE = 0
+                ctypes.windll.user32.ShowWindow(hwnd, SW_HIDE)
+                return
+            except Exception:
+                pass
+        self.withdraw()
+
+    def _win32_show(self) -> None:
+        """Показать окно через WinAPI ShowWindow(SW_SHOWNA).
+
+        SW_SHOWNA (8) показывает окно без перевода фокуса — безопаснее для
+        вызова из трея. В отличие от Tk deiconify(), не создаёт новую запись
+        в панели задач Windows 10/11.
+        """
+        hwnd = self._win32_hwnd()
+        if hwnd:
+            try:
+                import ctypes
+                SW_SHOWNA = 8
+                ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNA)
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                self.lift()
+                return
+            except Exception:
+                pass
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
     # ── tray ────────────────────────────────────────────────────────
     def _init_tray(self) -> None:
         if self._tray is not None:
@@ -1225,9 +1279,7 @@ class App(tk.Tk):
 
     def _show_from_tray(self) -> None:
         try:
-            self.deiconify()
-            self.lift()
-            self.focus_force()
+            self._win32_show()
         except Exception:
             log.exception("show from tray failed")
 
@@ -1267,7 +1319,7 @@ class App(tk.Tk):
                 self._init_tray()
             if self._tray is not None:
                 try:
-                    self.withdraw()
+                    self._win32_hide()
                 except Exception:
                     log.exception("withdraw failed")
                 return

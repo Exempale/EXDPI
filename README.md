@@ -1,6 +1,7 @@
 # EXDPI — обход DPI и VPN в одном окне
 
 ![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total)
+[![Support via CryptoBot](https://img.shields.io/badge/Поддержать_проект-CryptoBot-2AABEE?style=for-the-badge&logo=telegram&logoColor=white)](http://t.me/send?start=IV5iNcieHvH7)
 
 Автор сборки: **Exempale**. Логика обхода, прокси и VPN-ядро взяты из оригинальных
 репозиториев основных авторов — этот проект объединяет их в один GUI.

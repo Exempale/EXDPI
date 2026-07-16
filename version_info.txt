@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Exempale'),
           StringStruct('FileDescription', 'EXDPI'),
-          StringStruct('FileVersion', '2.0.0'),
+          StringStruct('FileVersion', '2.1.0'),
           StringStruct('InternalName', 'EXDPI'),
           StringStruct('LegalCopyright', 'MIT · Exempale, based on zapret-discord-youtube and tg-ws-proxy'),
           StringStruct('OriginalFilename', 'EXDPI.exe'),
           StringStruct('ProductName', 'EXDPI'),
-          StringStruct('ProductVersion', '2.0.0'),
+          StringStruct('ProductVersion', '2.1.0'),
         ]
       )
     ]),

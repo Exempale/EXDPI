@@ -335,7 +335,7 @@ pyinstaller build.spec --clean --noconfirm
 
 <div align="center">
 
-Если проект пригодился, звезда на репозитории или донат через кнопку выше
+Если проект пригодился, звезда на репозитории или донат через кнопку ниже
 помогут в дальнейшей разработке.
 
 [![Support via CryptoBot](https://img.shields.io/badge/Поддержать_проект-CryptoBot-2AABEE?style=for-the-badge&logo=telegram&logoColor=white)](http://t.me/send?start=IV5iNcieHvH7)

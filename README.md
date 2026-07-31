@@ -9,7 +9,7 @@
 
 [![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&color=2AABEE&label=Downloads)](https://github.com/Exempale/EXDPI/releases)
 [![Latest release](https://img.shields.io/github/v/release/Exempale/EXDPI?style=for-the-badge&color=success&label=Version)](https://github.com/Exempale/EXDPI/releases/latest)
-[![License](https://img.shields.io/github/license/Exempale/EXDPI?style=for-the-badge&color=blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows11&logoColor=white)](#системные-требования)
 
 [![Support via CryptoBot](https://img.shields.io/badge/Поддержать_проект-CryptoBot-2AABEE?style=for-the-badge&logo=telegram&logoColor=white)](http://t.me/send?start=IV5iNcieHvH7)
@@ -290,7 +290,7 @@ EXDPI/
     ├── icon.ico
     ├── icon.png
     ├── singbox/            # sing-box.exe (ядро VPN)
-    └── zapret/             # winws.exe + WinDivert + general*.bat + lists/
+    └── zapret/             # winws.exe + WinDivert + general*.bat + lists/ + bin/
 ```
 
 Конфиг хранится в `%APPDATA%\EXDPI\config.json`. Удалите файл, параметры
@@ -329,7 +329,12 @@ pyinstaller build.spec --clean --noconfirm
 * sing-box: ядро VPN (`resources/singbox/sing-box.exe`), проект SagerNet,
   используется без изменений.
 
-Сам EXDPI распространяется под лицензией [MIT](LICENSE).
+Сам EXDPI распространяется под лицензией [GPL-3.0](LICENSE).
+
+Это программное обеспечение является свободным: вы можете распространять его
+и/или модифицировать в соответствии с условиями Стандартной общественной
+лицензии GNU версии 3 (GNU General Public License v3.0). Текст лицензии
+смотрите в файле [LICENSE](LICENSE).
 
 ---
 

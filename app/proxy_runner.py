@@ -44,11 +44,10 @@ class ProxyRunner:
         proxy_config.buffer_size = 256 * 1024
         proxy_config.pool_size = 4
         proxy_config.fallback_cfproxy = True
-        proxy_config.cfproxy_user_domains = []
-        proxy_config.cfproxy_worker_domains = []
+        proxy_config.fallback_cfproxy_priority = True
+        proxy_config.cfproxy_user_domain = ""
         proxy_config.fake_tls_domain = ""
         proxy_config.proxy_protocol = False
-        proxy_config.force_test_dc = False
 
     def start(self, cfg: Dict, on_error: Optional[Callable[[str], None]] = None) -> None:
         with self._lock:

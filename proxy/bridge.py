@@ -2,22 +2,28 @@ import asyncio
 import logging
 import struct
 
-from typing import List, Optional
-from urllib.parse import urlencode
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from typing import Dict, List, Optional
 
 from .utils import *
 from .stats import stats
 from .balancer import balancer
 from .config import proxy_config
 from .raw_websocket import RawWebSocket
-from .pool import cf_worker_pool
-from ._aes import Cipher, algorithms, modes
 
 
 log = logging.getLogger('tg-mtproto-proxy')
 _st_I_le = struct.Struct('<I')
 
 ZERO_64 = b'\x00' * 64
+DC_DEFAULT_IPS: Dict[int, str] = {
+    1: '149.154.175.50',
+    2: '149.154.167.51',
+    3: '149.154.175.100',
+    4: '149.154.167.91',
+    5: '149.154.171.5',
+    203: '91.105.192.100'
+}
 
 
 class CryptoCtx:
@@ -57,27 +63,19 @@ class MsgSplitter:
         self._plain_buf.extend(self._dec.update(chunk))
 
         parts = []
-        offset = 0
-        buf_len = len(self._cipher_buf)
-        # Walk the buffer with an offset instead of deleting each packet from
-        # the front. Front-deletion on a bytearray shifts the remaining bytes,
-        # so a chunk holding many small packets degrades to O(N^2); a single
-        # trailing del keeps splitting O(N).
-        while offset < buf_len:
-            packet_len = self._next_packet_len(offset, buf_len - offset)
+        while self._cipher_buf:
+            packet_len = self._next_packet_len()
             if packet_len is None:
                 break
             if packet_len <= 0:
-                parts.append(bytes(self._cipher_buf[offset:]))
-                offset = buf_len
+                parts.append(bytes(self._cipher_buf))
+                self._cipher_buf.clear()
+                self._plain_buf.clear()
                 self._disabled = True
                 break
-            parts.append(bytes(self._cipher_buf[offset:offset + packet_len]))
-            offset += packet_len
-
-        if offset:
-            del self._cipher_buf[:offset]
-            del self._plain_buf[:offset]
+            parts.append(bytes(self._cipher_buf[:packet_len]))
+            del self._cipher_buf[:packet_len]
+            del self._plain_buf[:packet_len]
         return parts
 
     def flush(self) -> List[bytes]:
@@ -88,23 +86,22 @@ class MsgSplitter:
         self._plain_buf.clear()
         return [tail]
 
-    def _next_packet_len(self, offset: int, avail: int) -> Optional[int]:
-        if avail <= 0:
+    def _next_packet_len(self) -> Optional[int]:
+        if not self._plain_buf:
             return None
         if self._proto == PROTO_ABRIDGED_INT:
-            return self._next_abridged_len(offset, avail)
+            return self._next_abridged_len()
         if self._proto in (PROTO_INTERMEDIATE_INT,
                            PROTO_PADDED_INTERMEDIATE_INT):
-            return self._next_intermediate_len(offset, avail)
+            return self._next_intermediate_len()
         return 0
 
-    def _next_abridged_len(self, offset: int, avail: int) -> Optional[int]:
-        first = self._plain_buf[offset]
+    def _next_abridged_len(self) -> Optional[int]:
+        first = self._plain_buf[0]
         if first in (0x7F, 0xFF):
-            if avail < 4:
+            if len(self._plain_buf) < 4:
                 return None
-            payload_len = int.from_bytes(
-                self._plain_buf[offset + 1:offset + 4], 'little') * 4
+            payload_len = int.from_bytes(self._plain_buf[1:4], 'little') * 4
             header_len = 4
         else:
             payload_len = (first & 0x7F) * 4
@@ -112,48 +109,37 @@ class MsgSplitter:
         if payload_len <= 0:
             return 0
         packet_len = header_len + payload_len
-        if avail < packet_len:
+        if len(self._plain_buf) < packet_len:
             return None
         return packet_len
 
-    def _next_intermediate_len(self, offset: int, avail: int) -> Optional[int]:
-        if avail < 4:
+    def _next_intermediate_len(self) -> Optional[int]:
+        if len(self._plain_buf) < 4:
             return None
-        payload_len = _st_I_le.unpack_from(self._plain_buf, offset)[0] & 0x7FFFFFFF
+        payload_len = _st_I_le.unpack_from(self._plain_buf, 0)[0] & 0x7FFFFFFF
         if payload_len <= 0:
             return 0
         packet_len = 4 + payload_len
-        if avail < packet_len:
+        if len(self._plain_buf) < packet_len:
             return None
         return packet_len
 
 
+
 async def do_fallback(reader, writer, relay_init, label,
-                       dc: int, is_test_dc: bool, is_media: bool, media_tag: str,
+                       dc: int, is_media: bool, media_tag: str,
                        ctx: CryptoCtx, splitter=None):
-    ip_table = DC_TEST_IPS if is_test_dc else DC_DEFAULT_IPS
-    fallback_dst = ip_table.get(dc)
-    use_cf = proxy_config.fallback_cfproxy and not is_test_dc
-    worker_domains = proxy_config.cfproxy_worker_domains
+    fallback_dst = DC_DEFAULT_IPS.get(dc)
+    use_cf = proxy_config.fallback_cfproxy
+    cf_first = proxy_config.fallback_cfproxy_priority
 
-    methods: List[str] = []
+    methods: List[str] = ['tcp']
 
-    if worker_domains and fallback_dst:
-        methods.append('cf_worker')
     if use_cf:
-        methods.append('cf')
-    if fallback_dst:
-        methods.append('tcp')
+        methods.insert(0 if cf_first else 1, 'cf')
 
     for method in methods:
-        if method == 'cf_worker' and fallback_dst:
-            ok = await _cfproxy_worker_fallback(
-                reader, writer, relay_init, label, ctx,
-                dc=dc, is_test_dc=is_test_dc, is_media=is_media,
-                fallback_dst=fallback_dst, splitter=splitter)
-            if ok:
-                return True
-        elif method == 'cf':
+        if method == 'cf':
             ok = await _cfproxy_fallback(
                 reader, writer, relay_init, label, ctx,
                 dc=dc, is_media=is_media,
@@ -169,54 +155,6 @@ async def do_fallback(reader, writer, relay_init, label,
             if ok:
                 return True
     return False
-
-
-async def _cfproxy_worker_fallback(reader, writer, relay_init, label,
-                                   ctx: CryptoCtx,
-                                   dc: int, is_test_dc: bool, is_media: bool,
-                                   fallback_dst: str,
-                                   splitter=None):
-    media_tag = ' media' if is_media else ''
-    worker_domains = proxy_config.cfproxy_worker_domains
-    if not worker_domains:
-        return False
-
-    pooled = None if is_test_dc else await cf_worker_pool.get(
-        dc, fallback_dst, worker_domains)
-    if pooled:
-        ws, worker_domain = pooled
-        log.info("[%s] DC%d%s -> CF worker pool hit via %s for %s",
-                 label, dc, media_tag, worker_domain, fallback_dst)
-    else:
-        query = urlencode({
-            'dst': fallback_dst,
-            'dc': str(dc),
-        })
-        path = f'/apiws?{query}'
-
-        ws = None
-        for worker_domain in cf_worker_pool.available_domains(worker_domains):
-            log.info("[%s] DC%d%s -> trying CF worker %s for %s",
-                     label, dc, media_tag, worker_domain, fallback_dst)
-
-            try:
-                ws = await RawWebSocket.connect(worker_domain, worker_domain,
-                                                timeout=10.0, path=path)
-            except Exception as exc:
-                cf_worker_pool.report_failure(worker_domain, exc)
-                log.warning("[%s] DC%d%s CF worker %s failed: %s",
-                            label, dc, media_tag, worker_domain, repr(exc))
-                continue
-
-        if ws is None:
-            return False
-
-    stats.connections_cfproxy += 1
-    await ws.send(relay_init)
-    await bridge_ws_reencrypt(reader, writer, ws, label, ctx,
-                              dc=dc, is_media=is_media,
-                              splitter=None)
-    return True
 
 
 async def _cfproxy_fallback(reader, writer, relay_init, label,
@@ -286,10 +224,9 @@ async def bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
     up_packets = 0
     down_packets = 0
     start_time = asyncio.get_running_loop().time()
-    close_reason = 'normal'
 
     async def tcp_to_ws():
-        nonlocal up_bytes, up_packets, close_reason
+        nonlocal up_bytes, up_packets
         try:
             while True:
                 chunk = await reader.read(65536)
@@ -315,22 +252,17 @@ async def bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
                         await ws.send(parts[0])
                 else:
                     await ws.send(chunk)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ConnectionError, OSError):
             return
-        except (ConnectionError, OSError) as e:
-            close_reason = f"client: {type(e).__name__}"
         except Exception as e:
-            close_reason = f"client: {type(e).__name__}: {e}"
             log.debug("[%s] tcp->ws ended: %s", label, e)
 
     async def ws_to_tcp():
-        nonlocal down_bytes, down_packets, close_reason
+        nonlocal down_bytes, down_packets
         try:
             while True:
                 data = await ws.recv()
                 if data is None:
-                    if close_reason == 'normal':
-                        close_reason = 'upstream: ws_close'
                     break
                 n = len(data)
                 stats.bytes_down += n
@@ -340,14 +272,9 @@ async def bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
                 data = ctx.clt_enc.update(plain)
                 writer.write(data)
                 await writer.drain()
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ConnectionError, OSError):
             return
-        except (ConnectionError, OSError) as e:
-            close_reason = f"upstream: {type(e).__name__}"
-        except asyncio.IncompleteReadError:
-            close_reason = 'upstream: tcp_reset'
         except Exception as e:
-            close_reason = f"upstream: {type(e).__name__}: {e}"
             log.debug("[%s] ws->tcp ended: %s", label, e)
 
     tasks = [asyncio.create_task(tcp_to_ws()),
@@ -363,9 +290,9 @@ async def bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
             except BaseException:
                 pass
         elapsed = asyncio.get_running_loop().time() - start_time
-        log.info("[%s] %s WS session closed (%s): "
+        log.info("[%s] %s WS session closed: "
                  "^%s (%d pkts) v%s (%d pkts) in %.1fs",
-                 label, dc_tag, close_reason,
+                 label, dc_tag,
                  human_bytes(up_bytes), up_packets,
                  human_bytes(down_bytes), down_packets,
                  elapsed)

@@ -1142,7 +1142,6 @@ class App(tk.Tk):
                 cfg_provider=lambda: self.ctl.cfg,
                 on_strategy=lambda s: self.after(0, self._tray_set_strategy, s),
                 on_mode=lambda m: self.after(0, self._tray_set_mode, m),
-                on_app_mode=lambda m: self.after(0, self._tray_set_app_mode, m),
                 on_dpitest=lambda: self.after(0, self._tray_open_dpitest),
                 on_logs=lambda: self.after(0, self._tray_open_logs),
                 on_settings=lambda: self.after(0, self._tray_open_settings),
@@ -1188,22 +1187,6 @@ class App(tk.Tk):
 
     def _tray_set_mode(self, mode: str) -> None:
         self._set_game_mode(mode)
-
-    def _tray_set_app_mode(self, mode: str) -> None:
-        """Смена режима приложения DPI ↔ VPN из трея.
-
-        Делегируем тому же обработчику, что и у главного переключателя режимов:
-        он и сохраняет cfg, и перезапускает движок, и перестраивает UI. После
-        смены режима меню трея перерисуется (видимость-провайдеры читают cfg).
-        """
-        if mode not in ("dpi", "vpn"):
-            return
-        self._on_app_mode_change(mode)
-        if self._tray is not None:
-            try:
-                self._tray.update_state()
-            except Exception:
-                pass
 
     def _cycle_game_mode(self) -> None:
         """Переключить режим запрета normal ↔ gaming кликом по плашке."""

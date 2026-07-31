@@ -1,6 +1,5 @@
 import os
 import ssl
-import logging
 import base64
 import struct
 import asyncio
@@ -8,8 +7,6 @@ import socket as _socket
 
 from typing import List, Optional, Tuple
 from .config import proxy_config
-
-log = logging.getLogger('tg-mtproto-proxy')
 
 
 _st_BB = struct.Struct('>BB')
@@ -81,15 +78,10 @@ class RawWebSocket:
         self._closed = False
 
     @staticmethod
-    async def connect(host: str, domain: str, timeout: float = 10.0,
-                      path: str = '/apiws', *,
-                      sni: Optional[str] = None) -> 'RawWebSocket':
-        if sni is None:
-            sni = domain
-
+    async def connect(host: str, domain: str, timeout: float = 10.0) -> 'RawWebSocket':
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, 443, ssl=_ssl_ctx,
-                                    server_hostname=sni),
+                                    server_hostname=domain),
             timeout=min(timeout, 10))
         
         set_sock_opts(writer.transport, proxy_config.buffer_size)
@@ -97,7 +89,7 @@ class RawWebSocket:
         ws_key = base64.b64encode(os.urandom(16)).decode()
 
         req = (
-            f'GET {path} HTTP/1.1\r\n'
+            f'GET /apiws HTTP/1.1\r\n'
             f'Host: {domain}\r\n'
             f'Upgrade: websocket\r\n'
             f'Connection: Upgrade\r\n'
@@ -106,7 +98,6 @@ class RawWebSocket:
             f'Sec-WebSocket-Protocol: binary\r\n'
             f'\r\n'
         )
-
         writer.write(req.encode())
         await writer.drain()
 
@@ -168,9 +159,6 @@ class RawWebSocket:
 
             if opcode == self.OP_CLOSE:
                 self._closed = True
-                code, reason = self._parse_close(payload)
-                log.debug("WS OP_CLOSE from upstream: code=%s reason=%r",
-                          code, reason)
                 try:
                     self.writer.write(self._build_frame(
                         self.OP_CLOSE,
@@ -212,25 +200,6 @@ class RawWebSocket:
             await self.writer.wait_closed()
         except Exception:
             pass
-
-    _WS_CLOSE_REASONS = {
-        1000: 'normal', 1001: 'going_away', 1002: 'protocol_error',
-        1003: 'unsupported_data', 1006: 'abnormal', 1007: 'bad_data',
-        1008: 'policy_violation', 1009: 'too_big', 1010: 'missing_extension',
-        1011: 'internal_error',
-    }
-
-    @classmethod
-    def _parse_close(cls, payload: Optional[bytes]) -> Tuple[Optional[int], str]:
-        if not payload or len(payload) < 2:
-            return None, ''
-        try:
-            code = int.from_bytes(payload[:2], 'big')
-            text = payload[2:].decode('utf-8', errors='replace')
-            name = cls._WS_CLOSE_REASONS.get(code)
-            return code, f"{text} ({name})" if name else text
-        except Exception:
-            return None, ''
 
     @staticmethod
     def _build_frame(opcode: int, data: bytes,

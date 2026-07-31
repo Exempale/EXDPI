@@ -39,13 +39,22 @@ def _enable_dpi_awareness() -> None:
 
 
 def _set_app_user_model_id() -> None:
-    """Чтобы Windows объединяла окна EXDPI и брала нашу иконку, а не Python.exe."""
+    """Чтобы Windows объединяла окна EXDPI и брала нашу иконку, а не Python.exe.
+
+    Без единого AppUserModelID каждый процесс-окно попадает в панель задач
+    под дефолтным ID интерпретатора/python.exe, из-за чего EXDPI там
+    появляется дважды (своё окно + «чужое» окно python) и получает общую
+    плохую иконку.
+    """
     if sys.platform != "win32":
         return
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Exempale.EXDPI")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Exempale.EXDPI.2.0")
     except Exception:
-        pass
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Exempale.EXDPI")
+        except Exception:
+            pass
 
 
 def _is_admin() -> bool:
@@ -174,14 +183,24 @@ def _acquire_single_instance() -> bool:
             return True
         if last_err == ERROR_ALREADY_EXISTS:
             try:
-                ctypes.windll.user32.MessageBoxW(
-                    None,
-                    "EXDPI уже запущен.\n\n"
-                    "Найдите иконку в системном трее или закройте старый процесс "
-                    "(Диспетчер задач → EXDPI.exe).",
-                    "EXDPI",
-                    0x40,
-                )
+                # Найти главное окно уже запущенного EXDPI и поднять его —
+                # так клик по ярлыку не даёт «второе окно», а активирует
+                # существующее. Ищем по классу Tk или заголовку.
+                user32 = ctypes.windll.user32
+                hwnd = user32.FindWindowW(None, "EXDPI")
+                if hwnd:
+                    SW_RESTORE = 9
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                    user32.SetForegroundWindow(hwnd)
+                else:
+                    ctypes.windll.user32.MessageBoxW(
+                        None,
+                        "EXDPI уже запущен.\n\n"
+                        "Найдите иконку в системном трее или закройте старый процесс "
+                        "(Диспетчер задач → EXDPI.exe).",
+                        "EXDPI",
+                        0x40,
+                    )
             except Exception:
                 pass
             return False

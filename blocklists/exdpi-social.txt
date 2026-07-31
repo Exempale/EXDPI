@@ -18,6 +18,7 @@ video.twimg.com
 ton.twimg.com
 api.twitter.com
 api.x.com
+amp.twimg.com
 
 # === Instagram ===
 instagram.com
@@ -136,6 +137,27 @@ discordapp.net
 cdn.discordapp.com
 gateway.discord.gg
 media.discordapp.net
+discord.co
+discord.app
+discord.dev
+discord.new
+discord.store
+discord.status
+discordcdn.com
+discordactivities.com
+discord-activities.com
+discordsays.com
+discordsez.com
+dis.gd
+
+# === Моды/оверлеи Twitch и другие стрим-утилиты ===
+frankerfacez.com
+ffzap.com
+betterttv.net
+7tv.app
+7tv.io
+klipy.com
+localizeapi.com
 
 # === Tumblr ===
 tumblr.com
@@ -200,9 +222,12 @@ www.okcupid.com
 twitch.tv
 www.twitch.tv
 m.twitch.tv
+clips.twitch.tv
+dashboard.twitch.tv
 static.twitchcdn.net
 ttvnw.net
 jtvnw.net
+live-video.net
 
 # === Soundcloud ===
 spotify.com

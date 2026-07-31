@@ -11,6 +11,18 @@ discordapp.net
 cdn.discordapp.com
 gateway.discord.gg
 media.discordapp.net
+discord.co
+discord.app
+discord.dev
+discord.new
+discord.store
+discord.status
+discordcdn.com
+discordactivities.com
+discord-activities.com
+discordsays.com
+discordsez.com
+dis.gd
 
 # === Steam / Valve ===
 steampowered.com
@@ -239,9 +251,13 @@ downloadcenter.intel.com
 # === Стриминг игр / захват ===
 twitch.tv
 www.twitch.tv
+m.twitch.tv
 static.twitchcdn.net
 ttvnw.net
 jtvnw.net
+live-video.net
+clips.twitch.tv
+dashboard.twitch.tv
 youtube.com
 www.youtube.com
 m.youtube.com
@@ -256,16 +272,47 @@ www.obsproject.com
 streamlabs.com
 www.streamlabs.com
 
+# === Моды/скины/аудио-оверлеи Twitch и т.п. ===
+frankerfacez.com
+ffzap.com
+betterttv.net
+7tv.app
+7tv.io
+klipy.com
+localizeapi.com
+
 # === Игровые сервисы / античиты / стора ===
 playstation.com
 www.playstation.com
 store.playstation.com
+playstation.net
+www.playstation.net
+sony.com
+sony.net
 xbox.com
 www.xbox.com
 xboxlive.com
 xbox.live
 nintendo.com
 www.nintendo.com
+nintendo-europe.com
+epicgames.dev
+store.epicgames.com
+
+# === Minecraft/CDN сервисы и подгрузка ===
+minecraftservices.com
+minecraftshop.com
+mojangcdn.com
+launcherapi.net
+
+# === EA / доп. домены ===
+ea.com.cn
+connect.ea.com
+signin.ea.com
+profile.ea.com
+accounts.ea.com
+help.ea.com
+api.ea.com
 
 # === Античиты / службы ===
 easyanticheat.net

@@ -343,7 +343,11 @@ pyinstaller build.spec --clean --noconfirm
 Если проект пригодился, звезда на репозитории или донат через кнопку ниже
 помогут в дальнейшей разработке.
 
-[![Support via CryptoBot](https://img.shields.io/badge/Поддержать_проект-CryptoBot-2AABEE?style=for-the-badge&logo=telegram&logoColor=white)](http://t.me/send?start=IV5iNcieHvH7)
+| Способ | Описание | Ссылка |
+|---|---|---|
+| 🧡 **DonationAlerts** | Карты РФ, СБП, ЮMoney | [Пополнить цель сбора](https://www.donationalerts.com/r/exempale) |
+| ⭐ **Telegram Stars** | С баланса Telegram | [Поддержать звёздами](https://t.me/Exempale) |
+| 🔐 **CryptoBot** | USDT, TON, BTC | [Донат в CryptoBot](http://t.me/send?start=IV5iNcieHvH7) |
 
 </div>
 

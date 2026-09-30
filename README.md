@@ -7,26 +7,6 @@
 Обход блокировок (Discord, YouTube, Telegram) и полноценный системный VPN на sing-box
 в одном лёгком GUI под Windows. Оба режима переключаются одной кнопкой.
 
-### Новое в 3.0
-
-* **WireGuard и AmneziaWG в VPN-режиме** — импорт `.conf`-файла одной кнопкой
-  или ссылка `wireguard://…` (обфускация AmneziaWG зависит от ядра, см. ниже).
-* **Мониторинг сервисов** — индикаторы YouTube / Discord / Roblox прямо в окне;
-  если сервис лёг на текущей стратегии, EXDPI **сам переключит** на рабочую
-  и пришлёт уведомление (настраивается во вкладке «Дополнительно»).
-* **Английский интерфейс** — язык выбирается автоматически или вручную
-  (Настройки → Общее).
-* **Глобальные горячие клавиши** — ON/OFF и показать/скрыть окно из любого
-  приложения.
-* **Самовосстановление** — watchdog поднимает упавшие winws/sing-box/прокси.
-* **Раздельное туннелирование** — выбранные `.exe` через VPN, остальное напрямую
-  (или наоборот).
-* **Облачные стратегии** — автообновление стратегий обхода без переустановки.
-
-> AmneziaWG: движок sing-box 1.13.14 не поддерживает параметры обфускации
-> (проверено `sing-box check`). Конфиги AWG импортируются, но подключение
-> идёт как обычный WireGuard — на чисто-AWG сервере handshake не пройдёт.
-
 [![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&color=2AABEE&label=Downloads)](https://github.com/Exempale/EXDPI/releases)
 [![Latest release](https://img.shields.io/github/v/release/Exempale/EXDPI?style=for-the-badge&color=success&label=Version)](https://github.com/Exempale/EXDPI/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -104,15 +84,6 @@ EXDPI работает в двух режимах, переключаются п
 
 * Windows 10 (1809+) или Windows 11, x64.
 * Права администратора (UAC) для WinDivert (DPI) и TUN-интерфейса (VPN).
-
-### macOS (экспериментально)
-
-С 3.0 есть сборка под macOS (Apple Silicon). Ограничения:
-
-* только VPN-режим: DPI-обход построен на WinDivert, эта технология существует только на Windows;
-* для TUN-интерфейса нужен root: распакуйте архив и запустите из терминала `sudo ./EXDPI`;
-* DPI-вкладки в настройках нет, автозапуск работает через LaunchAgent, уведомления через Notification Center;
-* сборка мало тестировалась, про проблемы пишите в issues.
 
 ---
 

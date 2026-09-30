@@ -7,10 +7,15 @@
 Обход блокировок (Discord, YouTube, Telegram) и полноценный системный VPN на sing-box
 в одном лёгком GUI под Windows. Оба режима переключаются одной кнопкой.
 
+Работает под Windows, macOS и Linux: на Windows весь функционал (DPI-обход и VPN),
+на macOS и Linux доступен VPN-режим.
+
 [![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&color=2AABEE&label=Downloads)](https://github.com/Exempale/EXDPI/releases)
 [![Latest release](https://img.shields.io/github/v/release/Exempale/EXDPI?style=for-the-badge&color=success&label=Version)](https://github.com/Exempale/EXDPI/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows11&logoColor=white)](#системные-требования)
+[![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-999999?style=for-the-badge&logo=apple&logoColor=white)](#системные-требования)
+[![Platform](https://img.shields.io/badge/platform-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#системные-требования)
 
 [![Support via CryptoBot](https://img.shields.io/badge/Поддержать_проект-CryptoBot-2AABEE?style=for-the-badge&logo=telegram&logoColor=white)](http://t.me/send?start=IV5iNcieHvH7)
 

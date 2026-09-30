@@ -17,7 +17,7 @@ log = logging.getLogger("dpibypass.zapret")
 # На macOS/Linux движок другой (utunws / nfqws) — см. zapret_mac/zapret_linux.
 # Модуль остаётся единой точкой входа: list_strategies() и ZapretRunner
 # диспетчеризуются по платформе, интерфейс у всех одинаковый.
-_PLAT = None
+_plat = None
 if sys.platform == "darwin":
     from . import zapret_mac as _plat
 elif sys.platform != "win32":

@@ -89,3 +89,46 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" dist/EXDPI-macos-arm64.zip --clobber \
             || gh release create "${GITHUB_REF_NAME}" dist/EXDPI-macos-arm64.zip \
                  --title "EXDPI ${GITHUB_REF_NAME}" --notes ""
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch sing-box (linux amd64)
+        run: |
+          curl -L -o /tmp/singbox.tgz \
+            https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-linux-amd64.tar.gz
+          tar -xzf /tmp/singbox.tgz -C /tmp
+          cp /tmp/sing-box-1.13.14-linux-amd64/sing-box resources/singbox/sing-box
+          chmod +x resources/singbox/sing-box
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Build
+        run: pyinstaller build.spec --clean --noconfirm
+
+      - name: Pack
+        run: |
+          cd dist
+          zip -r EXDPI-linux-amd64.zip EXDPI
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXDPI-linux
+          path: dist/EXDPI-linux-amd64.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/EXDPI-linux-amd64.zip --clobber \
+            || gh release create "${GITHUB_REF_NAME}" dist/EXDPI-linux-amd64.zip \
+                 --title "EXDPI ${GITHUB_REF_NAME}" --notes ""

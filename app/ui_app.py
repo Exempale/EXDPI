@@ -19,7 +19,6 @@ from .ui_tg_guide import TgVcGuideDialog
 from .ui_wizard import FirstRunWizard
 from .updater import UpdateDialog, check_async, snooze_for_three_days
 from .widgets import (
-    AdBanner,
     AnimatedToggle,
     AppModeSwitch,
     IconButton,
@@ -286,13 +285,12 @@ class App(tk.Tk):
     def _apply_mode_geometry(self) -> None:
         """Подобрать размер/минимум окна под текущий режим приложения.
 
-        VPN-экран несёт список серверов + поле ссылки + баннер, поэтому ему
-        нужно заметно больше высоты, иначе нижние элементы (тоггл, статус,
-        баннер) не помещаются. Высота ограничивается высотой экрана, чтобы
-        окно не уезжало за край на ноутбуках.
+        VPN-экран несёт список серверов и поле ссылки, поэтому ему нужно
+        больше высоты, чем компактному DPI-экрану. Высота ограничивается
+        высотой экрана, чтобы окно не уезжало за край на ноутбуках.
         """
         if self.ctl.is_vpn:
-            w, h, min_w, min_h = 600, 850, 560, 700
+            w, h, min_w, min_h = 640, 620, 560, 460
         else:
             w, h, min_w, min_h = 400, 440, 400, 420
         try:
@@ -546,8 +544,6 @@ class App(tk.Tk):
         self.hint_lbl.pack(pady=(6, 0))
 
         self._make_health_row(toggle_box)
-
-        AdBanner(toggle_box, width=320).pack(pady=(12, 0))
 
         self._refresh_server_list_from_cfg()
         sub_url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()

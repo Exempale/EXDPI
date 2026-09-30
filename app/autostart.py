@@ -11,8 +11,8 @@ UAC-промпт во время входа в систему и просто м
 ``HighestAvailable`` — она стартует приложение уже с правами администратора
 и без всплывающего UAC. Старый ключ Run при этом подчищается (миграция).
 
-На macOS используется LaunchAgent (~/Library/LaunchAgents), на прочих
-не-Windows платформах функции — no-op.
+На macOS используется LaunchAgent (~/Library/LaunchAgents), на Linux —
+XDG autostart (~/.config/autostart), на прочих платформах функции — no-op.
 """
 from __future__ import annotations
 
@@ -38,6 +38,32 @@ _CREATE_NO_WINDOW = 0x08000000
 
 
 _PLIST_LABEL = "com.exempale.exdpi"
+_DESKTOP_LABEL = "exdpi"
+
+
+def _linux_apply(enable: bool) -> None:
+    """Linux: XDG autostart, ~/.config/autostart/exdpi.desktop."""
+    cfg_dir = Path.home() / ".config" / "autostart"
+    desktop = cfg_dir / f"{_DESKTOP_LABEL}.desktop"
+    try:
+        if not enable:
+            desktop.unlink(missing_ok=True)
+            return
+        exe = _exe_path()
+        if not exe:
+            return
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        desktop.write_text(
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=EXDPI\n"
+            f"Exec={_xml_escape(exe)}\n"
+            "Terminal=false\n"
+            "X-GNOME-Autostart-enabled=true\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        log.exception("linux autostart failed")
 
 
 def _darwin_apply(enable: bool) -> None:
@@ -309,6 +335,9 @@ def apply(want_enabled: bool) -> None:
     """
     if sys.platform == "darwin":
         _darwin_apply(want_enabled)
+        return
+    if sys.platform == "linux":
+        _linux_apply(want_enabled)
         return
     if sys.platform != "win32":
         return

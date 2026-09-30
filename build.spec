@@ -1,15 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec для сборки EXDPI: exe на Windows, бинарь на macOS.
 
-На macOS бандлим только VPN-часть: zapret (winws + WinDivert) — виндовая
-технология, его ресурсы туда не пакуем. Ядро sing-box для darwin CI
-кладёт в resources/singbox/ перед сборкой.
+На macOS и Linux бандлим только VPN-часть: zapret (winws + WinDivert) —
+виндовая технология, его ресурсы туда не пакуем. Ядро sing-box под
+целевую платформу CI кладёт в resources/singbox/ перед сборкой.
 """
 import sys
 
 from pathlib import Path
 
-IS_MAC = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -20,9 +20,6 @@ datas = [
     (str(ROOT / "resources" / "icon.png"), "resources"),
     # пасхалка — прикольная картинка, открывается 5 кликами по версии
     (str(ROOT / "resources" / "easter" / "1.jpg"), "resources/easter"),
-    # рекламные баннеры VPN-режима (app/widgets.AdBanner) — выбираются по теме
-    (str(ROOT / "resources" / "banner_dark.png"), "resources"),
-    (str(ROOT / "resources" / "banner_light.png"), "resources"),
 ]
 binaries = []
 hiddenimports = [
@@ -48,8 +45,9 @@ hiddenimports = [
     'app.ui_dpitest',
     'app.tray',
     'pystray',
-    *(() if IS_MAC else ('pystray._win32',)),
-    *(() if not IS_MAC else ('pystray._darwin',)),
+    *(() if IS_WINDOWS else ('pystray._win32',)),
+    *(() if sys.platform == "darwin" else ('pystray._darwin',)),
+    *(() if sys.platform == "linux" else ('pystray._xorg',)),
     'PIL',
     'PIL.Image',
     'PIL.ImageDraw',
@@ -78,8 +76,8 @@ for pkg in ('cryptography', 'pystray', 'PIL'):
         print(f"[build.spec] WARNING: collect_all({pkg}) failed: {exc}")
 
 # Включаем все ресурсы zapret (bin + lists + bat-стратегии) — только на
-# Windows: на macOS winws.exe бесполезен, 40+ МБ не тащим
-if not IS_MAC:
+# Windows: на macOS и Linux winws.exe бесполезен, 40+ МБ не тащим
+if IS_WINDOWS:
     zapret_root = ROOT / "resources" / "zapret"
     for path in zapret_root.rglob("*"):
         if path.is_file():
@@ -137,7 +135,7 @@ exe_kwargs = dict(
     codesign_identity=None,
     entitlements_file=None,
 )
-if not IS_MAC:
+if IS_WINDOWS:
     exe_kwargs['icon'] = str(ROOT / "resources" / "icon.ico")
     exe_kwargs['uac_admin'] = True
     exe_kwargs['manifest'] = str(ROOT / "manifest.xml")

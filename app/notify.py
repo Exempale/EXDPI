@@ -67,6 +67,11 @@ def send(message: str, title: str = "EXDPI") -> None:
             target=_osascript_notify, args=(title, message),
             daemon=True, name="notify-toast",
         ).start()
+    elif sys.platform == "linux":
+        threading.Thread(
+            target=_linux_notify, args=(title, message),
+            daemon=True, name="notify-toast",
+        ).start()
     else:
         threading.Thread(
             target=_powershell_toast, args=(title, message),
@@ -90,6 +95,19 @@ def _osascript_notify(title: str, message: str) -> None:
         )
     except Exception:
         log.exception("osascript notify failed")
+
+
+def _linux_notify(title: str, message: str) -> None:
+    """Linux: уведомление через libnotify (notify-send)."""
+    if sys.platform != "linux":
+        return
+    try:
+        subprocess.run(
+            ["notify-send", "-a", "EXDPI", str(title), str(message)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+        )
+    except Exception:
+        log.exception("notify-send failed")
 
 
 def _powershell_toast(title: str, message: str) -> None:

@@ -2,8 +2,9 @@
 #
 # Запускается вручную (workflow_dispatch) или по пушу тега вида v*.
 # На теге собранные файлы автоматически прикрепляются к релизу:
-#   - EXDPI.exe           (Windows x64, DPI + VPN)
-#   - EXDPI-macos-arm64.zip (Apple Silicon, только VPN)
+#   - EXDPI.exe               (Windows x64, DPI + VPN)
+#   - EXDPI-macos-arm64.zip   (Apple Silicon, только VPN)
+#   - EXDPI-linux-amd64.zip   (Linux x64, только VPN)
 name: build
 
 on:

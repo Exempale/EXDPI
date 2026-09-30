@@ -741,13 +741,9 @@ class SettingsWindow(tk.Toplevel):
         seg = tk.Frame(tabbar, bg=THEME.card, padx=2, pady=2)
         seg.pack(side="left")
         self._tab_btns = {}
-        import sys as _sys
-        _tabs_spec = []
-        if _sys.platform == "win32":
-            _tabs_spec.append(("dpi", "DPI"))
-        _tabs_spec += [("vpn", "VPN"),
-                       ("gen", _tt("set.tab_general")),
-                       ("pro", _tt("set.tab_advanced"))]
+        _tabs_spec = [("dpi", "DPI"), ("vpn", "VPN"),
+                      ("gen", _tt("set.tab_general")),
+                      ("pro", _tt("set.tab_advanced"))]
         for tid, tlabel in _tabs_spec:
             b = tk.Label(seg, text=" " + tlabel + " ", bg=THEME.card,
                          fg=THEME.text_secondary, font=(THEME.font_ui, 9, "bold"),
@@ -798,22 +794,18 @@ class SettingsWindow(tk.Toplevel):
         self._bind_wheel_recursive = _bind_wheel_recursive
 
         # контейнеры-вкладки (пакуется только активный)
+        self._dpi_box = tk.Frame(body, bg=THEME.bg)
         self._vpn_box = tk.Frame(body, bg=THEME.bg)
         self._gen_box = tk.Frame(body, bg=THEME.bg)
-        self._tabs = {"vpn": self._vpn_box, "gen": self._gen_box}
-        if _sys.platform == "win32":
-            self._dpi_box = tk.Frame(body, bg=THEME.bg)
-            self._tabs["dpi"] = self._dpi_box
+        self._tabs = {"dpi": self._dpi_box, "vpn": self._vpn_box, "gen": self._gen_box}
         self._pro_box = tk.Frame(body, bg=THEME.bg)
         self._tabs["pro"] = self._pro_box
 
         # Каждую вкладку строим изолированно: сбой одной (напр. из-за окружения
         # или ttk) больше не оставляет окно пустым — в проблемной вкладке
         # показываем полный traceback, остальные строятся нормально.
-        _builders = []
-        if _sys.platform == "win32":
-            _builders.append(("dpi", self._dpi_box, self._build_dpi_tab))
-        _builders += [
+        _builders = [
+            ("dpi", self._dpi_box, self._build_dpi_tab),
             ("vpn", self._vpn_box, self._build_vpn_tab),
             ("gen", self._gen_box, self._build_gen_tab),
         ]
@@ -824,8 +816,7 @@ class SettingsWindow(tk.Toplevel):
             except Exception:
                 self._render_tab_error(_box, _tid)
 
-        default_tab = "vpn" if (str(self.cfg.get("app_mode", "dpi")) == "vpn"
-                                or "dpi" not in self._tabs) else "dpi"
+        default_tab = "vpn" if str(self.cfg.get("app_mode", "dpi")) == "vpn" else "dpi"
         try:
             self._show_tab(default_tab)
         except Exception:

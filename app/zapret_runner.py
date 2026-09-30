@@ -14,6 +14,15 @@ from . import paths
 
 log = logging.getLogger("dpibypass.zapret")
 
+# На macOS/Linux движок другой (utunws / nfqws) — см. zapret_mac/zapret_linux.
+# Модуль остаётся единой точкой входа: list_strategies() и ZapretRunner
+# диспетчеризуются по платформе, интерфейс у всех одинаковый.
+_PLAT = None
+if sys.platform == "darwin":
+    from . import zapret_mac as _plat
+elif sys.platform != "win32":
+    from . import zapret_linux as _plat
+
 
 def _kill_orphan_winws() -> int:
     """Убить чужие/осиротевшие winws.exe перед запуском нашего.
@@ -104,6 +113,8 @@ def resolve_strategy_file(bat_name: str) -> Path:
 
 
 def list_strategies() -> List[str]:
+    if _plat is not None:
+        return _plat.list_strategies()
     """Все доступные стратегии (general*.bat): встроенные + облачные (Pro)."""
     names: set = set()
     root = paths.zapret_root()
@@ -267,6 +278,40 @@ def write_user_hostlist(domains: List[str]) -> int:
 
 
 class ZapretRunner:
+    """Фасад платформенного DPI-движка (winws / utunws / nfqws)."""
+
+    def __init__(self) -> None:
+        if _plat is not None:
+            if sys.platform == "darwin":
+                self._impl = _plat.MacRunner()
+            else:
+                self._impl = _plat.NfqwsRunner()
+        else:
+            self._impl = _WinZapretRunner()
+
+    def start(self, strategy: str, on_exit: Optional[Callable[[int], None]] = None,
+              custom_domains: Optional[List[str]] = None,
+              game_mode: str = "normal") -> None:
+        return self._impl.start(strategy, on_exit=on_exit,
+                                custom_domains=custom_domains, game_mode=game_mode)
+
+    def stop(self, timeout: float = 4.0) -> None:
+        return self._impl.stop(timeout=timeout)
+
+    @property
+    def is_running(self) -> bool:
+        return self._impl.is_running
+
+    @property
+    def strategy(self) -> Optional[str]:
+        return self._impl.strategy
+
+    def last_output_tail(self, lines: int = 10) -> List[str]:
+        fn = getattr(self._impl, "last_output_tail", None)
+        return fn(lines) if fn else []
+
+
+class _WinZapretRunner:
     def __init__(self) -> None:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()

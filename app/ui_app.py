@@ -326,16 +326,11 @@ class App(tk.Tk):
             tooltip="Переключить тему",
         ).pack(side="right", padx=(8, 0), pady=(2, 0))
 
-        # переключатель DPI/VPN только на Windows: на macOS приложение
-        # целиком работает в VPN-режиме (WinDivert существует лишь там)
-        if sys.platform == "win32":
-            self.mode_switch = AppModeSwitch(
-                header, value=str(self.ctl.cfg.get("app_mode", "dpi")),
-                on_change=self._on_app_mode_change,
-            )
-            self.mode_switch.pack(side="right", padx=(8, 8), pady=(2, 0))
-        else:
-            self.mode_switch = None
+        self.mode_switch = AppModeSwitch(
+            header, value=str(self.ctl.cfg.get("app_mode", "dpi")),
+            on_change=self._on_app_mode_change,
+        )
+        self.mode_switch.pack(side="right", padx=(8, 8), pady=(2, 0))
 
         head_left = tk.Frame(header, bg=THEME.bg)
         head_left.pack(side="left", fill="x", expand=True)
@@ -1408,12 +1403,9 @@ class App(tk.Tk):
                 on_quit=lambda: self.after(0, self._quit_app),
                 is_on_provider=lambda: self.ctl.is_on(),
                 cfg_provider=lambda: self.ctl.cfg,
-                on_strategy=(lambda s: self.after(0, self._tray_set_strategy, s))
-                            if sys.platform == "win32" else None,
-                on_mode=(lambda m: self.after(0, self._tray_set_mode, m))
-                        if sys.platform == "win32" else None,
-                on_dpitest=(lambda: self.after(0, self._tray_open_dpitest))
-                           if sys.platform == "win32" else None,
+                on_strategy=lambda s: self.after(0, self._tray_set_strategy, s),
+                on_mode=lambda m: self.after(0, self._tray_set_mode, m),
+                on_dpitest=lambda: self.after(0, self._tray_open_dpitest),
                 on_logs=lambda: self.after(0, self._tray_open_logs),
                 on_settings=lambda: self.after(0, self._tray_open_settings),
             )

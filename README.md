@@ -7,8 +7,8 @@
 Обход блокировок (Discord, YouTube, Telegram) и полноценный системный VPN на sing-box
 в одном лёгком GUI под Windows. Оба режима переключаются одной кнопкой.
 
-Работает под Windows, macOS и Linux: на Windows весь функционал (DPI-обход и VPN),
-на macOS и Linux доступен VPN-режим.
+Работает под Windows, macOS и Linux: DPI-обход и VPN на Windows, на macOS и Linux
+VPN плюс экспериментальный DPI-обход через порты zapret (utunws/nfqws).
 
 [![Downloads](https://img.shields.io/github/downloads/Exempale/EXDPI/total?style=for-the-badge&color=2AABEE&label=Downloads)](https://github.com/Exempale/EXDPI/releases)
 [![Latest release](https://img.shields.io/github/v/release/Exempale/EXDPI?style=for-the-badge&color=success&label=Version)](https://github.com/Exempale/EXDPI/releases/latest)

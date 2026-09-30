@@ -75,11 +75,22 @@ for pkg in ('cryptography', 'pystray', 'PIL'):
     except Exception as exc:
         print(f"[build.spec] WARNING: collect_all({pkg}) failed: {exc}")
 
-# Включаем все ресурсы zapret (bin + lists + bat-стратегии) — только на
-# Windows: на macOS и Linux winws.exe бесполезен, 40+ МБ не тащим
+# Ресурсы zapret по платформе: на Windows полный бандл (winws + WinDivert
+# + списки + .bat), на macOS — движок utunws (Payload ZapretMac, Flowseal,
+# MIT), на Linux — nfqws (компилируется в CI из исходников zapret).
 if IS_WINDOWS:
     zapret_root = ROOT / "resources" / "zapret"
     for path in zapret_root.rglob("*"):
+        if path.is_file():
+            rel_dir = path.parent.relative_to(ROOT)
+            datas.append((str(path), str(rel_dir)))
+elif sys.platform == "darwin" and (ROOT / "resources" / "zapret-mac").is_dir():
+    for path in (ROOT / "resources" / "zapret-mac").rglob("*"):
+        if path.is_file():
+            rel_dir = path.parent.relative_to(ROOT)
+            datas.append((str(path), str(rel_dir)))
+elif sys.platform == "linux" and (ROOT / "resources" / "zapret-linux").is_dir():
+    for path in (ROOT / "resources" / "zapret-linux").rglob("*"):
         if path.is_file():
             rel_dir = path.parent.relative_to(ROOT)
             datas.append((str(path), str(rel_dir)))

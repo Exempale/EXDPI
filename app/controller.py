@@ -66,10 +66,6 @@ class Controller:
 
     @property
     def is_vpn(self) -> bool:
-        # DPI-обход (winws + WinDivert) существует только на Windows:
-        # на macOS приложение целиком работает в VPN-режиме
-        if sys.platform != "win32":
-            return True
         return str(self.cfg.get("app_mode", "dpi")) == "vpn"
 
     # ── config ────────────────────────────────────────────────────────

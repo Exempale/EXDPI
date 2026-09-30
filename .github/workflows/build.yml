@@ -64,6 +64,19 @@ jobs:
           cp /tmp/sing-box-1.13.14-darwin-arm64/sing-box resources/singbox/sing-box
           chmod +x resources/singbox/sing-box
 
+      - name: Fetch zapret engine (macOS, Flowseal ZapretMac)
+        run: |
+          curl -L -o /tmp/zapretmac.zip \
+            https://github.com/Flowseal/zapret-mac-discord-youtube/releases/download/1.1.2/ZapretMac-macOS-universal.zip
+          unzip -o /tmp/zapretmac.zip -d /tmp/zapretmac
+          PAYLOAD=/tmp/zapretmac/ZapretMac.app/Contents/Resources/Payload
+          mkdir -p resources/zapret-mac
+          cp -R "$PAYLOAD/bin" resources/zapret-mac/bin
+          cp -R "$PAYLOAD/strategies" resources/zapret-mac/strategies
+          cp -R "$PAYLOAD/default-lists" resources/zapret-mac/default-lists
+          cp "$PAYLOAD/watchdog.sh" resources/zapret-mac/watchdog.sh
+          chmod +x resources/zapret-mac/exdpi-*.sh
+
       - name: Install deps
         run: pip install -r requirements.txt
 
@@ -106,6 +119,20 @@ jobs:
           tar -xzf /tmp/singbox.tgz -C /tmp
           cp /tmp/sing-box-1.13.14-linux-amd64/sing-box resources/singbox/sing-box
           chmod +x resources/singbox/sing-box
+
+      - name: Build nfqws (zapret, bol-van)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libcap-dev libnetfilter-queue-dev zlib1g-dev
+          curl -L -o /tmp/zapret.tar.gz \
+            https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.tar.gz
+          tar -xzf /tmp/zapret.tar.gz -C /tmp
+          make -C /tmp/zapret-v72.13/nfqws
+          mkdir -p resources/zapret-linux/bin resources/zapret-linux/strategies resources/zapret-linux/lists
+          cp /tmp/zapret-v72.13/nfqws/nfqws resources/zapret-linux/nfqws
+          cp resources/zapret/bin/*.bin resources/zapret-linux/bin/
+          cp resources/zapret/general*.bat resources/zapret-linux/strategies/
+          cp -r resources/zapret/lists/. resources/zapret-linux/lists/
 
       - name: Install deps
         run: pip install -r requirements.txt

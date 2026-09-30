@@ -8,10 +8,11 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
 
 from . import easter, logs, presets, paths, securedns, settings_io
+from .i18n import t as _tt
 from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
 from .strategy_auto import AUTO_STRATEGY_ID, AUTO_STRATEGY_LABEL, is_auto
 from .theme import THEME, available_themes, label_for as theme_label_for
-from .widgets import IconButton
+from .widgets import IconButton, bind_clipboard_keys, bind_paste_by_keycode
 from .zapret_runner import list_strategies, open_service_bat
 
 
@@ -64,6 +65,7 @@ class _Field(tk.Frame):
         if readonly:
             self._entry.configure(state="readonly", readonlybackground=THEME.card)
         self._entry.pack(fill="x", ipady=6, pady=(4, 0))
+        bind_paste_by_keycode(self._entry)
 
         self._var.trace_add("write", self._on_change)
 
@@ -225,6 +227,9 @@ class _DomainsBox(tk.Frame):
         if value:
             self._txt.insert("1.0", "; ".join(value))
         self._txt.bind("<KeyRelease>", lambda _e: self._update_count())
+        # Ctrl+C/V/X/A по keycode: на русской раскладке штатные биндинги
+        # Text не срабатывают (keysym «с» вместо C и т.д.)
+        bind_clipboard_keys(self._txt)
 
         # row: counter + actions
         row = tk.Frame(self, bg=THEME.bg)
@@ -649,7 +654,7 @@ class SettingsWindow(tk.Toplevel):
         # mousewheel binding tag, чтобы корректно отвязать на close
         self._wheel_bind: Optional[str] = None
 
-        self.title("EXDPI · настройки")
+        self.title(_tt("set.title"))
         self.configure(bg=THEME.bg)
         self.resizable(True, True)
         self.minsize(640, 480)
@@ -719,11 +724,11 @@ class SettingsWindow(tk.Toplevel):
         tk.Label(credit, text="ориг. авторы: Flowseal / bol-van · tg-ws-proxy",
                  fg=THEME.text_muted, bg=THEME.bg,
                  font=(THEME.font_ui, 8)).pack(anchor="center")
-        cancel = tk.Label(buttons, text="отмена", fg=THEME.text_secondary, bg=THEME.bg,
+        cancel = tk.Label(buttons, text=_tt("set.cancel"), fg=THEME.text_secondary, bg=THEME.bg,
                           font=(THEME.font_ui, 10), cursor="hand2")
         cancel.pack(side="left", padx=(2, 0))
         cancel.bind("<Button-1>", lambda _e: self._cancel())
-        save = tk.Label(buttons, text="  сохранить  ", fg=THEME.bg, bg=THEME.accent,
+        save = tk.Label(buttons, text=_tt("set.save"), fg=THEME.bg, bg=THEME.accent,
                         font=(THEME.font_ui, 10, "bold"), cursor="hand2", padx=18, pady=8)
         save.pack(side="right")
         save.bind("<Button-1>", lambda _e: self._save())
@@ -736,7 +741,14 @@ class SettingsWindow(tk.Toplevel):
         seg = tk.Frame(tabbar, bg=THEME.card, padx=2, pady=2)
         seg.pack(side="left")
         self._tab_btns = {}
-        for tid, tlabel in (("dpi", "DPI"), ("vpn", "VPN"), ("gen", "Общее")):
+        import sys as _sys
+        _tabs_spec = []
+        if _sys.platform == "win32":
+            _tabs_spec.append(("dpi", "DPI"))
+        _tabs_spec += [("vpn", "VPN"),
+                       ("gen", _tt("set.tab_general")),
+                       ("pro", _tt("set.tab_advanced"))]
+        for tid, tlabel in _tabs_spec:
             b = tk.Label(seg, text=" " + tlabel + " ", bg=THEME.card,
                          fg=THEME.text_secondary, font=(THEME.font_ui, 9, "bold"),
                          padx=14, pady=4, cursor="hand2")
@@ -785,26 +797,35 @@ class SettingsWindow(tk.Toplevel):
 
         self._bind_wheel_recursive = _bind_wheel_recursive
 
-        # три контейнера-вкладки (пакуется только активный)
-        self._dpi_box = tk.Frame(body, bg=THEME.bg)
+        # контейнеры-вкладки (пакуется только активный)
         self._vpn_box = tk.Frame(body, bg=THEME.bg)
         self._gen_box = tk.Frame(body, bg=THEME.bg)
-        self._tabs = {"dpi": self._dpi_box, "vpn": self._vpn_box, "gen": self._gen_box}
+        self._tabs = {"vpn": self._vpn_box, "gen": self._gen_box}
+        if _sys.platform == "win32":
+            self._dpi_box = tk.Frame(body, bg=THEME.bg)
+            self._tabs["dpi"] = self._dpi_box
+        self._pro_box = tk.Frame(body, bg=THEME.bg)
+        self._tabs["pro"] = self._pro_box
 
         # Каждую вкладку строим изолированно: сбой одной (напр. из-за окружения
         # или ttk) больше не оставляет окно пустым — в проблемной вкладке
         # показываем полный traceback, остальные строятся нормально.
-        for _tid, _box, _builder in (
-            ("dpi", self._dpi_box, self._build_dpi_tab),
+        _builders = []
+        if _sys.platform == "win32":
+            _builders.append(("dpi", self._dpi_box, self._build_dpi_tab))
+        _builders += [
             ("vpn", self._vpn_box, self._build_vpn_tab),
             ("gen", self._gen_box, self._build_gen_tab),
-        ):
+        ]
+        _builders.append(("pro", self._pro_box, self._build_pro_tab))
+        for _tid, _box, _builder in _builders:
             try:
                 _builder(_box)
             except Exception:
                 self._render_tab_error(_box, _tid)
 
-        default_tab = "vpn" if str(self.cfg.get("app_mode", "dpi")) == "vpn" else "dpi"
+        default_tab = "vpn" if (str(self.cfg.get("app_mode", "dpi")) == "vpn"
+                                or "dpi" not in self._tabs) else "dpi"
         try:
             self._show_tab(default_tab)
         except Exception:
@@ -1175,6 +1196,14 @@ class SettingsWindow(tk.Toplevel):
         )
         self._autostart.pack(fill="x", pady=(0, 8))
 
+        self._start_enabled = _CheckRow(
+            body, "Включать обход при запуске",
+            "При старте EXDPI (в том числе автозапуске с Windows) обход "
+            "включается сам — система загрузилась, обход уже работает.",
+            bool(self.cfg.get("start_enabled", False)),
+        )
+        self._start_enabled.pack(fill="x", pady=(0, 8))
+
         self._tray = _CheckRow(
             body, "Сворачивать в трей",
             "По крестику окно прячется в трей вместо выхода.",
@@ -1204,6 +1233,16 @@ class SettingsWindow(tk.Toplevel):
             value=str(self.cfg.get("theme", "dark")),
         )
         self._theme.pack(fill="x", pady=(0, 8))
+
+        self._lang_labels = {"auto": "Auto · как в системе", "ru": "Русский", "en": "English"}
+        self._lang_rev = {v: k for k, v in self._lang_labels.items()}
+        cur_lang = str(self.cfg.get("language", "auto"))
+        self._lang = _Select(
+            body, _tt("set.lang_label"),
+            list(self._lang_labels.values()),
+            self._lang_labels.get(cur_lang, "Auto · как в системе"),
+        )
+        self._lang.pack(fill="x", pady=(0, 8))
 
         tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(8, 10))
 
@@ -1257,6 +1296,172 @@ class SettingsWindow(tk.Toplevel):
             self._dev_box.pack(fill="x", pady=(2, 0))
         tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
 
+    # ── вкладка «Дополнительно»: фичи бывшей Pro-версии ──────────────
+    def _build_pro_tab(self, body) -> None:
+        self._perapp = _CheckRow(
+            body, "Раздельное туннелирование (по процессам)",
+            "Выбранные .exe идут в туннель, остальной трафик — мимо (или наоборот). "
+            "Работает в VPN-режиме.",
+            bool(self.cfg.get("pro_perapp_enabled", False)),
+        )
+        self._perapp.pack(fill="x", pady=(0, 8))
+
+        self._perapp_box = tk.Frame(body, bg=THEME.bg)
+        self._route_labels = {"в туннель (остальное напрямую)": "tunnel",
+                              "напрямую (остальное в туннель)": "direct"}
+        route_cur = "в туннель (остальное напрямую)"
+        for _k, _v in self._route_labels.items():
+            if _v == str(self.cfg.get("pro_perapp_route", "tunnel")):
+                route_cur = _k
+                break
+        self._route = _Select(
+            self._perapp_box, "Направление выбранных процессов",
+            list(self._route_labels.keys()),
+            route_cur,
+        )
+        self._route.pack(fill="x", pady=(0, 8))
+
+        proc_head = tk.Frame(self._perapp_box, bg=THEME.bg)
+        proc_head.pack(fill="x", pady=(2, 4))
+        tk.Label(proc_head, text="ПРОЦЕССЫ (.exe)",
+                 fg=THEME.text_secondary, bg=THEME.bg,
+                 font=(THEME.font_ui, 8, "bold")).pack(side="left")
+        addb = tk.Label(proc_head, text="добавить .exe…", fg=THEME.accent_dim, bg=THEME.bg,
+                        font=(THEME.font_ui, 9, "underline"), cursor="hand2")
+        addb.pack(side="right")
+        addb.bind("<Button-1>", lambda _e: self._on_add_process())
+        delb = tk.Label(proc_head, text="удалить", fg=THEME.text_secondary, bg=THEME.bg,
+                        font=(THEME.font_ui, 9, "underline"), cursor="hand2")
+        delb.pack(side="right", padx=(0, 12))
+        delb.bind("<Button-1>", lambda _e: self._on_del_process())
+
+        self._proc_list = tk.Listbox(
+            self._perapp_box, height=5, bg=THEME.card, fg=THEME.text_primary,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightbackground=THEME.border, font=(THEME.font_ui, 9),
+            selectbackground=THEME.accent_dark, selectforeground=THEME.text_primary,
+        )
+        for pr in (self.cfg.get("pro_perapp_processes") or []):
+            self._proc_list.insert("end", str(pr))
+        self._proc_list.pack(fill="x")
+
+        self._perapp_box.pack(fill="x", pady=(0, 10))
+
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(0, 10))
+
+        self._autoping = _CheckRow(
+            body, "Автовыбор лучшего пинга",
+            "Перед включением VPN EXDPI замерит задержку до всех локаций и выберет самую быструю.",
+            bool(self.cfg.get("pro_autoping_enabled", True)),
+        )
+        self._autoping.pack(fill="x", pady=(0, 8))
+
+        self._selfheal = _CheckRow(
+            body, "Самовосстановление при сбоях",
+            "Watchdog следит за ядрами (winws/sing-box) и поднимает их обратно, если упали.",
+            bool(self.cfg.get("pro_selfheal_enabled", True)),
+        )
+        self._selfheal.pack(fill="x", pady=(0, 8))
+
+        self._strategy_cloud = _CheckRow(
+            body, "Облачные стратегии",
+            "Автообновление стратегий zapret с сервера без установки новой версии EXDPI.",
+            bool(self.cfg.get("pro_strategy_cloud_enabled", True)),
+        )
+        self._strategy_cloud.pack(fill="x", pady=(0, 8))
+
+        self._hotkeys = _CheckRow(
+            body, "Глобальные горячие клавиши",
+            "Переключатель ON/OFF из любого приложения (по комбинациям ниже).",
+            bool(self.cfg.get("pro_hotkeys_enabled", True)),
+        )
+        self._hotkeys.pack(fill="x", pady=(0, 8))
+
+        _hot_options = ["Ctrl+Alt+E", "Ctrl+Alt+W", "Ctrl+Alt+P", "Ctrl+Alt+X",
+                        "Ctrl+Alt+H", "Ctrl+Shift+E", "Ctrl+Shift+O",
+                        "Ctrl+Shift+H", "F7", "F8", "F9"]
+        cur = str(self.cfg.get("pro_hotkey_key", "Ctrl+Alt+E"))
+        self._hotkey_sel = _Select(
+            body, "Комбинация для ON/OFF",
+            _hot_options,
+            cur if cur in _hot_options else "Ctrl+Alt+E",
+        )
+        self._hotkey_sel.pack(fill="x", pady=(0, 8))
+
+        cur_show = str(self.cfg.get("pro_hotkey_show_key", "Ctrl+Alt+W"))
+        self._hotkey_show_sel = _Select(
+            body, "Комбинация для показать/скрыть окно",
+            _hot_options,
+            cur_show if cur_show in _hot_options else "Ctrl+Alt+W",
+        )
+        self._hotkey_show_sel.pack(fill="x", pady=(0, 8))
+
+        tk.Frame(body, bg=THEME.border, height=1).pack(fill="x", pady=(10, 12))
+
+        self._healthmon = _CheckRow(
+            body, "Мониторинг сервисов",
+            "EXDPI проверяет доступность YouTube / Discord / ChatGPT и показывает "
+            "индикаторы в главном окне.",
+            bool(self.cfg.get("hc_enabled", True)),
+        )
+        self._healthmon.pack(fill="x", pady=(0, 8))
+
+        self._healthswitch = _CheckRow(
+            body, "Автопереключение стратегии",
+            "Если сервис лёг на текущей стратегии, EXDPI сам переберёт остальные "
+            "и включит рабочую (DPI-режим).",
+            bool(self.cfg.get("hc_autoswitch", True)),
+        )
+        self._healthswitch.pack(fill="x", pady=(0, 8))
+
+        self._hc_interval_labels = {"2 минуты": 2, "5 минут": 5,
+                                    "10 минут": 10, "15 минут": 15}
+        self._hc_interval_rev = {v: k for k, v in self._hc_interval_labels.items()}
+        try:
+            _hc_cur = self._hc_interval_rev.get(
+                int(self.cfg.get("hc_interval_min", 5)), "5 минут")
+        except (TypeError, ValueError):
+            _hc_cur = "5 минут"
+        self._hc_interval = _Select(
+            body, "Как часто проверять сервисы",
+            list(self._hc_interval_labels.keys()),
+            _hc_cur,
+        )
+        self._hc_interval.pack(fill="x", pady=(0, 8))
+
+        tk.Frame(body, bg=THEME.bg, height=8).pack(fill="x")
+
+    def _pro_features_built(self) -> bool:
+        """Живы ли виджеты Pro-фич (после снятия ключа их быть не должно)."""
+        w_ = getattr(self, "_perapp", None)
+        if w_ is None:
+            return False
+        try:
+            return bool(w_.winfo_exists())
+        except Exception:
+            return False
+
+    def _on_add_process(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self, title="Выберите .exe для туннелирования",
+            filetypes=[("Программы", "*.exe"), ("Все файлы", "*.*")],
+        )
+        if not path:
+            return
+        # сохраняем регистр имени как на диске: sing-box сравнивает
+        # process_name с учётом регистра ("Spotify.exe", а не "spotify.exe")
+        name = os.path.basename(path)
+        existing = {str(x).lower() for x in self._proc_list.get(0, "end")}
+        if name.lower() not in existing:
+            self._proc_list.insert("end", name)
+
+    def _on_del_process(self) -> None:
+        sel = self._proc_list.curselection()
+        if not sel:
+            return
+        for i in reversed(sel):
+            self._proc_list.delete(i)
+
     # actions
     def _regen_secret(self) -> None:
         self._secret.set(os.urandom(16).hex())
@@ -1295,9 +1500,11 @@ class SettingsWindow(tk.Toplevel):
         out["domain_preset"] = self._preset.get()
         out["game_mode"] = self._game_mode.get()
         out["autostart_with_windows"] = self._autostart.get()
+        out["start_enabled"] = self._start_enabled.get()
         out["minimize_to_tray"] = self._tray.get()
         out["start_minimized"] = self._start_min.get()
         out["theme"] = self._theme.get()
+        out["language"] = self._lang_rev.get(self._lang.get(), "auto")
         out["notifications_enabled"] = self._notify.get()
         out["developer_mode"] = self._dev_mode.get()
         out["securedns_enabled"] = self._securedns_on.get()
@@ -1320,6 +1527,22 @@ class SettingsWindow(tk.Toplevel):
         out["vpn_block_quic"] = self._vpn_block_quic.get()
         out["vpn_ru_direct"] = self._vpn_ru_direct.get()
         out["vpn_autoselect_fastest"] = self._vpn_autoselect.get()
+
+        # Pro (только в Pro-сборке; виджеты могут отсутствовать в случае ошибки вкладки)
+        if self._pro_features_built():
+            out["pro_perapp_enabled"] = self._perapp.get()
+            out["pro_perapp_route"] = self._route_labels.get(self._route.get(), "tunnel")
+            out["pro_perapp_processes"] = [str(x).strip() for x in self._proc_list.get(0, "end")]
+            out["pro_autoping_enabled"] = self._autoping.get()
+            out["pro_selfheal_enabled"] = self._selfheal.get()
+            out["pro_strategy_cloud_enabled"] = self._strategy_cloud.get()
+            out["pro_hotkeys_enabled"] = self._hotkeys.get()
+            out["pro_hotkey_key"] = self._hotkey_sel.get()
+            out["pro_hotkey_show_key"] = self._hotkey_show_sel.get()
+            out["hc_enabled"] = self._healthmon.get()
+            out["hc_autoswitch"] = self._healthswitch.get()
+            out["hc_interval_min"] = self._hc_interval_rev.get(
+                self._hc_interval.get(), 5)
         return out
 
     def _save(self) -> None:

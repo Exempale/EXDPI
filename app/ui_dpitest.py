@@ -176,10 +176,10 @@ class DpiTestDialog(tk.Toplevel):
 
         def _on_progress(res: TestResult) -> None:
             # вызывается из потока — бунсим в UI
-            self.after(0, lambda r=res: self._apply_result(r))
+            self._schedule(self._apply_result, res)
 
         def _on_done(_results: List[TestResult]) -> None:
-            self.after(0, self._on_done_ui)
+            self._schedule(self._on_done_ui)
 
         run_async(
             targets=DEFAULT_TARGETS,
@@ -188,7 +188,23 @@ class DpiTestDialog(tk.Toplevel):
             on_done=_on_done,
         )
 
+    def _alive(self) -> bool:
+        """Живо ли окно диалога (фоновый тест может досидеть после закрытия)."""
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
+    def _schedule(self, fn, *args) -> None:
+        """after(0, ...) без падения, если окно уже уничтожено."""
+        try:
+            self.after(0, lambda: fn(*args))
+        except Exception:
+            pass
+
     def _apply_result(self, res: TestResult) -> None:
+        if not self._alive():
+            return
         self._results.append(res)
         w = self._rows.get(res.host)
         if not w:
@@ -215,6 +231,8 @@ class DpiTestDialog(tk.Toplevel):
         info.configure(text=text, fg=fg)
 
     def _on_done_ui(self) -> None:
+        if not self._alive():
+            return
         self._running = False
         self._rerun_btn.configure(bg=THEME.accent, cursor="hand2")
 

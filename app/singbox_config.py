@@ -1028,6 +1028,26 @@ _DNS_SERVERS = {
 _CURRENT_OPTS: Dict[str, Any] = {}
 
 
+def _process_name_variants(raw) -> List[str]:
+    """Имена процессов как на диске + в нижнем регистре, без дублей.
+
+    sing-box сравнивает ``process_name`` с точностью до регистра, а имя
+    образа на Windows приходит с дисковым регистром ("Spotify.exe").
+    Пользователь мог добавить имя в любом регистре, а старые конфиги и
+    вовсе сохраняли всё в нижнем, — кладём в правило оба варианта,
+    совпадёт хотя бы один.
+    """
+    out: List[str] = []
+    for p in raw or []:
+        p = str(p).strip()
+        if not p:
+            continue
+        for v in (p, p.lower()):
+            if v not in out:
+                out.append(v)
+    return out
+
+
 def _vpn_options(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Нормализовать VPN-настройки из cfg в набор опций сборки конфига."""
     cfg = cfg or {}
@@ -1041,6 +1061,14 @@ def _vpn_options(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not (576 <= mtu <= 9000):
         mtu = 1500
     dns = str(cfg.get("vpn_dns", "cloudflare"))
+    # раздельное туннелирование по процессам: действует при включённой
+    # настройке; без активных процессов правило в конфиг не попадает
+    perapp_processes: List[str] = []
+    perapp_route = "tunnel"
+    if bool(cfg.get("pro_perapp_enabled", False)):
+        perapp_processes = _process_name_variants(
+            cfg.get("pro_perapp_processes", []))
+        perapp_route = str(cfg.get("pro_perapp_route", "tunnel"))
     return {
         "dns_server": _DNS_SERVERS.get(dns, "1.1.1.1"),
         "stack": stack,
@@ -1049,6 +1077,9 @@ def _vpn_options(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "strict_route": bool(cfg.get("vpn_strict_route", False)),
         "block_quic": bool(cfg.get("vpn_block_quic", False)),
         "ru_direct": bool(cfg.get("vpn_ru_direct", True)),
+        "perapp_enabled": bool(perapp_processes),
+        "perapp_route": perapp_route,
+        "perapp_processes": perapp_processes,
     }
 
 
@@ -1115,6 +1146,13 @@ def _build_dns(out_tag: str) -> Dict[str, Any]:
             "domain_suffix": [".ru", ".su", ".xn--p1ai"],
             "server": "dns-direct",
         })
+    if opts.get("perapp_enabled") and opts.get("perapp_processes") \
+            and opts.get("perapp_route") == "direct":
+        # процессы, идущие мимо туннеля, резолвим тоже напрямую
+        dns["rules"].append({
+            "process_name": list(opts["perapp_processes"]),
+            "server": "dns-direct",
+        })
     return dns
 
 
@@ -1137,12 +1175,69 @@ def _build_route(out_tag: str) -> Dict[str, Any]:
         # QUIC (UDP/443) режем → браузер откатывается на TCP/TLS. Часто чинит
         # «сайт открылся, видео/стрим не идёт» под VPN.
         rules.append({"protocol": "quic", "action": "reject"})
+
+    # раздельное туннелирование по процессам (Pro, только Windows):
+    #   route=tunnel → выбранные .exe в туннель, остальное напрямую;
+    #   route=direct → выбранные .exe напрямую, остальное в туннель.
+    final = out_tag
+    if opts.get("perapp_enabled") and opts.get("perapp_processes"):
+        names = list(opts["perapp_processes"])
+        if opts.get("perapp_route") == "direct":
+            rules.append({"process_name": names, "outbound": "direct"})
+        else:
+            rules.append({"process_name": names, "outbound": out_tag})
+            final = "direct"
+
     return {
         "rules": rules,
         "auto_detect_interface": True,
         "default_domain_resolver": "dns-direct",
-        "final": out_tag,
+        "final": final,
     }
+
+
+def _build_wg_config(wg: Dict[str, Any]) -> Dict[str, Any]:
+    """Полный конфиг sing-box с WireGuard/AmneziaWG endpoint-ом.
+
+    WG в sing-box >= 1.11 — это endpoint, а не outbound: секция outbounds
+    содержит только direct, маршрутный ``final`` и DNS-детур указывают на
+    тег endpoint ("wg-out"). Всё остальное (TUN, DNS, .ru напрямую,
+    блокировка QUIC, раздельное туннелирование) работает как обычно.
+    """
+    from . import wireguard as wgmod
+
+    ep = wgmod.endpoint_config(wg, mtu_fallback=int(_CURRENT_OPTS.get("mtu", 1408)))
+    out_tag = ep["tag"]
+    config: Dict[str, Any] = {
+        "log": {"level": "info", "timestamp": True},
+        "dns": _build_dns(out_tag),
+        "inbounds": _build_inbounds(),
+        "endpoints": [ep],
+        "outbounds": [{"type": "direct", "tag": "direct"}],
+        "route": _build_route(out_tag),
+    }
+    return config
+
+
+def _build_wg_config_from_uri(uri: str) -> Dict[str, Any]:
+    from . import wireguard as wgmod
+    try:
+        wg = wgmod.parse_wireguard_uri(uri)
+    except wgmod.WireguardError as exc:
+        raise ParseError(f"WireGuard: {exc}") from exc
+    return _build_wg_config(wg)
+
+
+def _build_wg_config_from_conf(conf_text: str) -> Dict[str, Any]:
+    from . import wireguard as wgmod
+    if not conf_text.strip():
+        raise ParseError("WireGuard: конфиг .conf не импортирован — "
+                         "нажмите «импорт .conf» в VPN-режиме")
+    try:
+        wg = wgmod.parse_wireguard_conf(conf_text)
+    except wgmod.WireguardError as exc:
+        raise ParseError(f"WireGuard: {exc}") from exc
+    return _build_wg_config(wg)
 
 
 def build_config(uri: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1158,6 +1253,12 @@ def build_config(uri: str, options: Optional[Dict[str, Any]] = None) -> Dict[str
     """
     global _CURRENT_OPTS
     _CURRENT_OPTS = _vpn_options(options)
+    low = str(uri or "").strip().lower()
+    if low.startswith(("wireguard://", "wg://")):
+        return _build_wg_config_from_uri(uri)
+    if low.startswith("wgconf://"):
+        conf = (options or {}).get("vpn_wg_conf") or ""
+        return _build_wg_config_from_conf(conf)
     parsed = parse_uri(uri)
     out_tag = parsed["tag"]
 

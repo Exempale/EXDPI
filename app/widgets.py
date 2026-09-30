@@ -33,6 +33,85 @@ def _mix(c1: str, c2: str, t: float) -> str:
     )
 
 
+def bind_clipboard_keys(text: "tk.Text") -> None:
+    """Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A в tk.Text по физическому keycode.
+
+    Штатные биндинги Text завязаны на keysym: на русской раскладке клавиша
+    C отдаёт keysym «с», и Control-C молча не срабатывает. Физические коды
+    (C=67, V=86, X=88, A=65) от раскладки не зависят.
+    """
+    text.bind("<Key>", lambda e: clipboard_text_key(text, e))
+
+
+def clipboard_text_key(text: "tk.Text", event) -> str:
+    """Логика Ctrl+C/X/V/A для tk.Text (см. bind_clipboard_keys).
+
+    Отдельная функция, чтобы тесты могли вызывать её с фейковым событием
+    без реальной раскладки/фокуса.
+    """
+    if not (event.state & 0x0004):  # Ctrl
+        return None
+    code = event.keycode
+    if code == 86:  # V: вставить (с заменой выделения)
+        try:
+            clip = text.clipboard_get()
+        except Exception:
+            return "break"
+        try:
+            text.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        text.insert("insert", clip)
+        return "break"
+    if code == 67 and text.tag_ranges("sel"):  # C: копировать
+        try:
+            text.clipboard_clear()
+            text.clipboard_append(text.get("sel.first", "sel.last"))
+        except Exception:
+            pass
+        return "break"
+    if code == 88 and text.tag_ranges("sel"):  # X: вырезать
+        try:
+            frag = text.get("sel.first", "sel.last")
+            text.clipboard_clear()
+            text.clipboard_append(frag)
+            text.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        return "break"
+    if code == 65:  # A: выделить всё
+        try:
+            text.tag_add("sel", "1.0", "end-1c")
+            text.mark_set("insert", "1.0")
+        except Exception:
+            pass
+        return "break"
+    return None
+
+
+
+def bind_paste_by_keycode(entry) -> None:
+    """Ctrl+V в tk.Entry по физическому keycode (86 = V) — работает на любой
+    раскладке. Стандартный bind Tk завязан на keysym: на кириллической
+    раскладке клавиша V отдаёт keysym «м», и Control-V молча не срабатывает."""
+    def _on_key(event):
+        ctrl = bool(event.state & 0x0004)
+        if ctrl and event.keycode == 86:
+            try:
+                clip = entry.clipboard_get()
+            except Exception:
+                return None
+            try:
+                entry.delete(0, tk.END)
+                entry.insert(0, clip.strip())
+            except Exception:
+                pass
+            return "break"
+        return None
+
+    entry.bind("<Key>", _on_key)
+
+
 def _ease_in_out(t: float) -> float:
     return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
 

@@ -13,6 +13,7 @@ from urllib import request as urlrequest
 from urllib.error import URLError
 
 from . import GITHUB_RELEASES_URL, GITHUB_REPO, __version__
+from . import APP_INTERNAL_NAME, APP_NAME
 from . import paths
 from .theme import THEME
 from .widgets import IconButton
@@ -165,7 +166,7 @@ class UpdateDialog(tk.Toplevel):
         self._mandatory = is_mandatory(info.get("tag"))
         self._master = master
 
-        self.title("EXDPI · обновление")
+        self.title(f"{APP_NAME} · обновление")
         self.configure(bg=THEME.bg)
         self.resizable(False, False)
         self.transient(master)
@@ -236,7 +237,7 @@ class UpdateDialog(tk.Toplevel):
             font=(THEME.font_ui, 8, "bold"), anchor="w",
         ).pack(anchor="w")
         tk.Label(
-            title_box, text="EXDPI",
+            title_box, text=APP_NAME,
             fg=THEME.text_primary, bg=THEME.bg,
             font=(THEME.font_ui, 13, "bold"), anchor="w",
         ).pack(anchor="w")
@@ -255,7 +256,7 @@ class UpdateDialog(tk.Toplevel):
         ).pack(anchor="w")
         tk.Label(
             body,
-            text=f"EXDPI {tag}  ·  у тебя {__version__}",
+            text=f"{APP_NAME} {tag}  ·  у тебя {__version__}",
             fg=THEME.accent_dim, bg=THEME.bg,
             font=(THEME.font_ui, 10, "bold"),
             anchor="w",
@@ -263,12 +264,12 @@ class UpdateDialog(tk.Toplevel):
         if self._mandatory:
             body_text = (
                 "Это обязательное обновление — пропустить его нельзя.\n"
-                "Откройте страницу релиза, скачайте новый EXDPI.exe\n"
+                f"Откройте страницу релиза, скачайте новый {APP_INTERNAL_NAME}.exe\n"
                 "и замените старый. Без обновления программа закроется."
             )
         else:
             body_text = (
-                "Откройте страницу релиза, скачайте новый EXDPI.exe\n"
+                f"Откройте страницу релиза, скачайте новый {APP_INTERNAL_NAME}.exe\n"
                 "и замените старый."
             )
         tk.Label(

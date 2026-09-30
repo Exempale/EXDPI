@@ -1,6 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec для сборки одного exe EXDPI."""
+"""PyInstaller spec для сборки EXDPI: exe на Windows, бинарь на macOS.
+
+На macOS бандлим только VPN-часть: zapret (winws + WinDivert) — виндовая
+технология, его ресурсы туда не пакуем. Ядро sing-box для darwin CI
+кладёт в resources/singbox/ перед сборкой.
+"""
+import sys
+
 from pathlib import Path
+
+IS_MAC = sys.platform == "darwin"
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -39,7 +48,8 @@ hiddenimports = [
     'app.ui_dpitest',
     'app.tray',
     'pystray',
-    'pystray._win32',
+    *(() if IS_MAC else ('pystray._win32',)),
+    *(() if not IS_MAC else ('pystray._darwin',)),
     'PIL',
     'PIL.Image',
     'PIL.ImageDraw',
@@ -67,12 +77,14 @@ for pkg in ('cryptography', 'pystray', 'PIL'):
     except Exception as exc:
         print(f"[build.spec] WARNING: collect_all({pkg}) failed: {exc}")
 
-# Включаем все ресурсы zapret (bin + lists + bat-стратегии)
-zapret_root = ROOT / "resources" / "zapret"
-for path in zapret_root.rglob("*"):
-    if path.is_file():
-        rel_dir = path.parent.relative_to(ROOT)
-        datas.append((str(path), str(rel_dir)))
+# Включаем все ресурсы zapret (bin + lists + bat-стратегии) — только на
+# Windows: на macOS winws.exe бесполезен, 40+ МБ не тащим
+if not IS_MAC:
+    zapret_root = ROOT / "resources" / "zapret"
+    for path in zapret_root.rglob("*"):
+        if path.is_file():
+            rel_dir = path.parent.relative_to(ROOT)
+            datas.append((str(path), str(rel_dir)))
 
 # Ядро Sing-box (resources/singbox/sing-box.exe) для VPN-режима (TUN).
 singbox_root = ROOT / "resources" / "singbox"
@@ -111,13 +123,7 @@ a = Analysis(
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
+exe_kwargs = dict(
     name='EXDPI',
     debug=False,
     bootloader_ignore_signals=False,
@@ -130,8 +136,19 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(ROOT / "resources" / "icon.ico"),
-    uac_admin=True,
-    manifest=str(ROOT / "manifest.xml"),
-    version=str(ROOT / "version_info.txt"),
+)
+if not IS_MAC:
+    exe_kwargs['icon'] = str(ROOT / "resources" / "icon.ico")
+    exe_kwargs['uac_admin'] = True
+    exe_kwargs['manifest'] = str(ROOT / "manifest.xml")
+    exe_kwargs['version'] = str(ROOT / "version_info.txt")
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    **exe_kwargs,
 )

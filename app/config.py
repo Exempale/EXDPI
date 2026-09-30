@@ -233,6 +233,9 @@ DEFAULT: Dict[str, Any] = {
     "minimize_to_tray": True,
     # запускать программу свёрнутой (например, при автозапуске Windows)
     "start_minimized": False,
+    # автоматически включать обход при старте приложения (для автозапуска
+    # с Windows: система загрузилась — обход уже работает)
+    "start_enabled": False,
     # тема оформления интерфейса (см. app/theme.py: dark / light)
     "theme": "dark",
     # уведомления Windows (вкл/выкл обхода, ошибки, обновления)
@@ -246,6 +249,37 @@ DEFAULT: Dict[str, Any] = {
     # авто-проверка обновлений: timestamp (sec since epoch), до которого
     # не показывать диалог (после клика «пропустить обновление» = +3 дня)
     "update_skip_until": 0,
+
+    # раздельное туннелирование по процессам (только VPN-режим):
+    #  enabled — включено; route — куда гнать выбранные процессы:
+    #    "tunnel" — процессы идут в туннель (остальное напрямую),
+    #    "direct" — процессы идут напрямую (остальное в туннель);
+    #  processes — список имён .exe (без пути, регистронезависимо).
+    "pro_perapp_enabled": False,
+    "pro_perapp_route": "tunnel",
+    "pro_perapp_processes": [],
+
+    # автовыбор лучшего пинга перед включением VPN
+    "pro_autoping_enabled": True,
+    # самовосстановление при сбоях (watchdog)
+    "pro_selfheal_enabled": True,
+    # облачное автообновление стратегий zapret (без пересборки .exe)
+    "pro_strategy_cloud_enabled": True,
+    # версия последнего применённого облачного манифеста стратегий (грязь-метка)
+    "pro_strategy_cloud_ver": "",
+    # глобальные горячие клавиши: enabled + комбинации вида "Ctrl+Alt+E"
+    "pro_hotkeys_enabled": True,
+    "pro_hotkey_key": "Ctrl+Alt+E",
+    "pro_hotkey_show_key": "Ctrl+Alt+W",
+
+    # мониторинг сервисов (health-check): проверка YouTube/Discord/ChatGPT
+    # и автопереключение стратегии при падении (DPI-режим)
+    "hc_enabled": True,
+    "hc_autoswitch": True,
+    "hc_interval_min": 5,
+
+    # язык интерфейса: "auto" — по языку системы, иначе "ru"/"en"
+    "language": "auto",
 }
 
 
@@ -279,7 +313,8 @@ def load() -> Dict[str, Any]:
     if not isinstance(cfg.get("securedns_provider"), str) or not cfg["securedns_provider"]:
         cfg["securedns_provider"] = "cloudflare"
     for bool_key in ("securedns_enabled", "securedns_set_system",
-                     "notifications_enabled", "developer_mode", "wizard_done"):
+                     "notifications_enabled", "developer_mode", "wizard_done",
+                     "start_enabled"):
         if not isinstance(cfg.get(bool_key), bool):
             cfg[bool_key] = bool(DEFAULT[bool_key])
     if not isinstance(cfg.get("zapret_strategy_auto_result"), str):
@@ -297,6 +332,33 @@ def load() -> Dict[str, Any]:
                 "vpn_ru_direct", "vpn_autoselect_fastest"):
         if not isinstance(cfg.get(_bk), bool):
             cfg[_bk] = bool(DEFAULT[_bk])
+
+    # ── функции (бывшие Pro) ─────────────────────────────────────────
+    if not isinstance(cfg.get("pro_perapp_processes"), list):
+        cfg["pro_perapp_processes"] = []
+    cfg["pro_perapp_processes"] = [str(p).strip() for p in cfg["pro_perapp_processes"] if str(p).strip()]
+    if cfg.get("pro_perapp_route") not in ("tunnel", "direct"):
+        cfg["pro_perapp_route"] = "tunnel"
+    for _bk in ("pro_perapp_enabled", "pro_autoping_enabled", "pro_selfheal_enabled",
+                "pro_strategy_cloud_enabled", "pro_hotkeys_enabled"):
+        if not isinstance(cfg.get(_bk), bool):
+            cfg[_bk] = bool(DEFAULT[_bk])
+    if not isinstance(cfg.get("pro_strategy_cloud_ver"), str):
+        cfg["pro_strategy_cloud_ver"] = ""
+    if not isinstance(cfg.get("pro_hotkey_key"), str) or not cfg["pro_hotkey_key"]:
+        cfg["pro_hotkey_key"] = "Ctrl+Alt+E"
+    if not isinstance(cfg.get("pro_hotkey_show_key"), str) or not cfg["pro_hotkey_show_key"]:
+        cfg["pro_hotkey_show_key"] = "Ctrl+Alt+W"
+    for _bk in ("hc_enabled", "hc_autoswitch"):
+        if not isinstance(cfg.get(_bk), bool):
+            cfg[_bk] = bool(DEFAULT[_bk])
+    try:
+        _hc = int(cfg.get("hc_interval_min", 5))
+    except (TypeError, ValueError):
+        _hc = 5
+    cfg["hc_interval_min"] = _hc if 2 <= _hc <= 60 else 5
+    if cfg.get("language") not in ("auto", "ru", "en"):
+        cfg["language"] = "auto"
     return cfg
 
 

@@ -21,3 +21,10 @@ Thumbs.db
 *.log
 EXDPI-crash.log
 DpiBypass-crash.log
+
+# служебные папки плагинов ZCode
+.video_agent/
+.v2c/
+
+# временная папка сборки при занятом dist
+dist_new/

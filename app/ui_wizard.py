@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 from . import paths, presets
 from .strategy_auto import StrategyScore, run_auto_select_async
 from .theme import THEME, apply_theme, available_themes, label_for as theme_label_for
+from .widgets import bind_paste_by_keycode
 
 
 log = logging.getLogger("dpibypass.ui_wizard")
@@ -68,7 +69,8 @@ class FirstRunWizard(tk.Toplevel):
     WIDTH = 640
     HEIGHT = 560
 
-    STEP_COUNT = 8  # welcome, app_mode, theme, domains, mode, strategy, options, finish
+    # welcome, app_mode, theme, domains, mode, strategy, options, [pro,] finish
+    STEP_COUNT = 8
 
     def __init__(
         self,
@@ -100,6 +102,7 @@ class FirstRunWizard(tk.Toplevel):
             "minimize_to_tray": bool(cfg.get("minimize_to_tray", True)),
             "notifications_enabled": bool(cfg.get("notifications_enabled", True)),
             "securedns_enabled": bool(cfg.get("securedns_enabled", False)),
+            "pro_key": str(cfg.get("pro_key") or ""),
             "wizard_done": True,
         }
         self._strategy_choice = tk.StringVar(value="auto")
@@ -314,7 +317,7 @@ class FirstRunWizard(tk.Toplevel):
             self._step_domains, self._step_mode, self._step_strategy,
             self._step_options, self._step_finish,
         ]
-        frame = tk.Frame(self._stage, bg=THEME.bg)
+        frame = tk.Frame(self._stage, bg=THEME.bg)  # оставлен единый отступ кода
         try:
             builders[idx](frame)
         except Exception:
@@ -714,7 +717,8 @@ class FirstRunWizard(tk.Toplevel):
             except Exception:
                 pass
 
-    # 7 — финиш
+    # 7 — активация Pro (только в Pro-сборке)
+    # 8 — финиш
     def _step_finish(self, frame: tk.Frame) -> None:
         self._collect_options()
         center = tk.Frame(frame, bg=THEME.bg)

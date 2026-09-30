@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Dict, List, Optional
 
-from . import __version__, autostart, easter, logs, notify, paths, singbox_config
+from . import __version__, autostart, easter, i18n, logs, notify, paths, singbox_config
 from .config import save as save_config
 from .controller import Controller
 from .theme import THEME, apply_theme, available_themes
@@ -45,6 +45,7 @@ class App(tk.Tk):
         self.report_callback_exception = self._report_callback_exception
 
         self.ctl = Controller()
+        i18n.set_language(str(self.ctl.cfg.get("language", "auto")))
         self.ctl.bind(on_state=self._on_state, on_error=self._on_error)
 
         self._error_text: Optional[str] = None
@@ -122,9 +123,155 @@ class App(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Watchdog + горячие клавиши + мониторинг сервисов
+        self._init_services()
+
         # мастер первого запуска — один раз
         if not bool(self.ctl.cfg.get("wizard_done", False)):
             self.after(400, self._open_wizard)
+        # автовключение обхода при старте (пока мастер не пройден — не дёргаем)
+        elif bool(self.ctl.cfg.get("start_enabled", False)):
+            self.after(1500, self._auto_enable_bypass)
+
+    # ── фоновые сервисы ──────────────────────────────────────────────
+    def _init_services(self) -> None:
+        from . import healthcheck as healthcheck_mod
+        from . import hotkeys as hotkeys_mod
+        from . import strategy_cloud as strategy_cloud_mod
+        from . import watchdog as watchdog_mod
+
+        try:
+            self._watchdog = watchdog_mod.Watchdog(self.ctl)
+            self._watchdog.start()
+        except Exception:
+            log.exception("watchdog start failed")
+        try:
+            if sys.platform == "win32":
+                self._hotkeys = hotkeys_mod.HotkeyManager(
+                    self.ctl.cfg,
+                    self._on_hotkey_toggle,
+                    on_showhide=self._on_hotkey_showhide)
+                self._hotkeys.start()
+        except Exception:
+            log.exception("hotkeys start failed")
+        # облачные стратегии — в фоне, не блокируя UI
+        try:
+            if strategy_cloud_mod.should_run(self.ctl.cfg):
+                self.after(3000, lambda: strategy_cloud_mod.run_async(
+                    self.ctl.cfg, self._on_strategy_cloud_done))
+        except Exception:
+            log.exception("strategy cloud start failed")
+        # мониторинг сервисов (health-check + автопереключение)
+        try:
+            self._health = healthcheck_mod.HealthChecker(
+                self.ctl,
+                on_status=self._on_health_status,
+                on_notify=lambda msg: notify.send(msg))
+            self._health.start()
+        except Exception:
+            log.exception("healthcheck start failed")
+
+    def _auto_enable_bypass(self) -> None:
+        """Включить обход при старте приложения (настройка start_enabled).
+
+        Эквивалент клика по большому тумблеру: состояние тумблера, полный
+        _on_toggle(True) со всеми проверками (VPN-ссылка, busy и т.д.).
+        """
+        try:
+            if self.ctl.is_on() or self.ctl.is_target_on():
+                return
+            self.toggle.set(True, animate=False)
+            self._on_toggle(True)
+        except Exception:
+            log.exception("auto enable bypass failed")
+
+    def _on_hotkey_toggle(self) -> None:
+        """Горячая клавиша: переключаем ON/OFF (с маршаллингом в UI-поток)."""
+        try:
+            self.after(0, self._tray_toggle)
+        except Exception:
+            log.exception("hotkey toggle marshall failed")
+
+    def _on_hotkey_showhide(self) -> None:
+        """Горячая клавиша: показать/скрыть окно (с маршаллингом в UI-поток)."""
+        try:
+            self.after(0, self._toggle_window_visible)
+        except Exception:
+            log.exception("hotkey showhide marshall failed")
+
+    def _toggle_window_visible(self) -> None:
+        """Скрыть окно, если оно видно, и показать, если скрыто."""
+        visible = True
+        hwnd = self._win32_hwnd()
+        if hwnd:
+            try:
+                import ctypes
+                visible = bool(ctypes.windll.user32.IsWindowVisible(hwnd))
+            except Exception:
+                visible = True
+        if visible:
+            self._win32_hide()
+        else:
+            self._win32_show()
+
+    def _on_strategy_cloud_done(self, message: str) -> None:
+        if not message:
+            return
+        try:
+            # вызывается из фонового потока — UI трогаем только через after
+            self.after(0, lambda: self._flash_hint(message))
+            notify.send(message)
+        except Exception:
+            log.exception("strategy cloud notify failed")
+
+    # ── мониторинг сервисов (health-check) ───────────────────────────
+    def _make_health_row(self, parent) -> None:
+        """Строка индикаторов YouTube/Discord/ChatGPT в главном окне."""
+        from . import healthcheck as healthcheck_mod
+        self._health_dots = {}
+        self._health_row = None
+        if not bool(self.ctl.cfg.get("hc_enabled", True)):
+            return
+        row = tk.Frame(parent, bg=THEME.bg)
+        row.pack(pady=(8, 0))
+        self._health_row = row
+        tk.Label(row, text=i18n.t("main.monitoring"), fg=THEME.text_muted, bg=THEME.bg,
+                 font=(THEME.font_ui, 8)).pack(side="left", padx=(0, 8))
+        for name, _h, _p, _s in healthcheck_mod.SERVICES:
+            cell = tk.Frame(row, bg=THEME.bg)
+            cell.pack(side="left", padx=6)
+            dot = tk.Canvas(cell, width=8, height=8, bg=THEME.bg,
+                            highlightthickness=0, bd=0)
+            dot.pack(anchor="center")
+            dot.create_oval(1, 1, 7, 7, fill=THEME.border, outline="")
+            self._health_dots[name] = dot
+            tk.Label(cell, text=name, fg=THEME.text_muted, bg=THEME.bg,
+                     font=(THEME.font_ui, 8)).pack()
+
+    def _on_health_status(self, results, network_ok) -> None:
+        """Колбэк из потока health-check — маршаллим в UI-поток."""
+        try:
+            self.after(0, lambda: self._render_health(results, network_ok))
+        except Exception:
+            log.exception("health status marshall failed")
+
+    def _render_health(self, results, network_ok) -> None:
+        dots = getattr(self, "_health_dots", None)
+        if not dots:
+            return
+        for name, dot in dots.items():
+            ok = results.get(name)
+            if ok is None:
+                color = THEME.border
+            elif ok:
+                color = THEME.track_on
+            else:
+                color = THEME.text_muted if not network_ok else THEME.danger
+            try:
+                dot.delete("all")
+                dot.create_oval(1, 1, 7, 7, fill=color, outline="")
+            except Exception:
+                pass
 
     # ── layout ───────────────────────────────────────────────────────
     def _center_on_screen(self) -> None:
@@ -141,8 +288,8 @@ class App(tk.Tk):
 
         VPN-экран несёт список серверов + поле ссылки + баннер, поэтому ему
         нужно заметно больше высоты, иначе нижние элементы (тоггл, статус,
-        баннер) не помещаются. DPI-экран — компактный. Высота ограничивается
-        высотой экрана, чтобы окно не уезжало за край на ноутбуках.
+        баннер) не помещаются. Высота ограничивается высотой экрана, чтобы
+        окно не уезжало за край на ноутбуках.
         """
         if self.ctl.is_vpn:
             w, h, min_w, min_h = 600, 850, 560, 700
@@ -181,11 +328,16 @@ class App(tk.Tk):
             tooltip="Переключить тему",
         ).pack(side="right", padx=(8, 0), pady=(2, 0))
 
-        self.mode_switch = AppModeSwitch(
-            header, value=str(self.ctl.cfg.get("app_mode", "dpi")),
-            on_change=self._on_app_mode_change,
-        )
-        self.mode_switch.pack(side="right", padx=(8, 8), pady=(2, 0))
+        # переключатель DPI/VPN только на Windows: на macOS приложение
+        # целиком работает в VPN-режиме (WinDivert существует лишь там)
+        if sys.platform == "win32":
+            self.mode_switch = AppModeSwitch(
+                header, value=str(self.ctl.cfg.get("app_mode", "dpi")),
+                on_change=self._on_app_mode_change,
+            )
+            self.mode_switch.pack(side="right", padx=(8, 8), pady=(2, 0))
+        else:
+            self.mode_switch = None
 
         head_left = tk.Frame(header, bg=THEME.bg)
         head_left.pack(side="left", fill="x", expand=True)
@@ -251,7 +403,7 @@ class App(tk.Tk):
         self.dot = StatusDot(status_row)
         self.dot.pack(side="left", padx=(0, 8))
         self.status_lbl = tk.Label(
-            status_row, text="Отключено",
+            status_row, text=i18n.t("main.off"),
             fg=THEME.text_primary, bg=THEME.bg,
             font=(THEME.font_ui, 16, "bold"),
         )
@@ -281,9 +433,11 @@ class App(tk.Tk):
         )
         self.hint_lbl.pack(pady=(6, 0))
 
+        self._make_health_row(toggle_box)
+
         # diagnostic link — открывает DPI-тест (TLS-handshake к набору хостов)
         self.diag_lbl = tk.Label(
-            toggle_box, text="проверить обход",
+            toggle_box, text=i18n.t("main.test_bypass"),
             fg=THEME.accent_dim, bg=THEME.bg,
             font=(THEME.font_ui, 9, "underline"),
             cursor="hand2",
@@ -323,13 +477,20 @@ class App(tk.Tk):
 
         uri_field = tk.Frame(toggle_box, bg=THEME.bg)
         uri_field.pack(fill="x", pady=(0, 10))
+        uri_head = tk.Frame(uri_field, bg=THEME.bg)
+        uri_head.pack(fill="x")
         tk.Label(
-            uri_field, text="VPN-ССЫЛКА (vless://, ss://, vmess://, trojan://, "
-                             "hysteria2://, tuic:// или подписка http/https)",
+            uri_head, text="VPN-ССЫЛКА (vless://, ss://, vmess://, trojan://, "
+                             "hysteria2://, tuic://, wireguard:// или подписка http/https)",
             fg=THEME.text_secondary, bg=THEME.bg,
-            font=(THEME.font_ui, 8, "bold"), anchor="w", wraplength=520,
+            font=(THEME.font_ui, 8, "bold"), anchor="w", wraplength=440,
             justify="left",
-        ).pack(fill="x")
+        ).pack(side="left", fill="x", expand=True)
+        wg_btn = tk.Label(uri_head, text="импорт .conf (WireGuard)",
+                          fg=THEME.accent_dim, bg=THEME.bg,
+                          font=(THEME.font_ui, 8, "underline"), cursor="hand2")
+        wg_btn.pack(side="right")
+        wg_btn.bind("<Button-1>", lambda _e: self._on_import_wg_conf())
         initial_uri = str(self.ctl.cfg.get("vpn_sub_url") or self.ctl.cfg.get("vpn_uri") or "")
         self.vpn_uri_var = tk.StringVar(value=initial_uri)
         self.vpn_uri_entry = tk.Entry(
@@ -370,19 +531,21 @@ class App(tk.Tk):
         self.dot = StatusDot(status_row)
         self.dot.pack(side="left", padx=(0, 8))
         self.status_lbl = tk.Label(
-            status_row, text="Отключено",
+            status_row, text=i18n.t("main.off"),
             fg=THEME.text_primary, bg=THEME.bg,
             font=(THEME.font_ui, 16, "bold"),
         )
         self.status_lbl.pack(side="left")
 
         self.hint_lbl = tk.Label(
-            toggle_box, text="VPN: отключён",
+            toggle_box, text=i18n.t("main.off_vpn"),
             fg=THEME.text_muted, bg=THEME.bg,
             font=(THEME.font_ui, 9),
             wraplength=360, justify="center",
         )
         self.hint_lbl.pack(pady=(6, 0))
+
+        self._make_health_row(toggle_box)
 
         AdBanner(toggle_box, width=320).pack(pady=(12, 0))
 
@@ -390,6 +553,41 @@ class App(tk.Tk):
         sub_url = str(self.ctl.cfg.get("vpn_sub_url", "")).strip()
         if sub_url and not self._vpn_servers:
             self._schedule_vpn_link_resolve(delay=50)
+
+    def _on_import_wg_conf(self) -> None:
+        """Импорт WireGuard/AmneziaWG конфига из .conf файла."""
+        from tkinter import filedialog
+        from . import wireguard as wgmod
+        path = filedialog.askopenfilename(
+            parent=self, title="Выберите WireGuard .conf",
+            filetypes=[("WireGuard конфиг", "*.conf"), ("Все файлы", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            text = open(path, "r", encoding="utf-8", errors="replace").read()
+            wg = wgmod.parse_wireguard_conf(text)
+        except Exception as exc:
+            log.exception("wg conf import failed")
+            try:
+                self.hint_lbl.configure(
+                    text=f"Не удалось импортировать .conf: {exc}",
+                    fg=THEME.danger)
+            except Exception:
+                pass
+            return
+        self.ctl.cfg["vpn_wg_conf"] = text
+        self.ctl.cfg["vpn_uri"] = "wgconf://local"
+        self.ctl.save()
+        self.vpn_uri_var.set("wgconf://local")
+        try:
+            msg = f"Импортирован {wgmod.summary(wg)}"
+            if wg.get("awg") and not wgmod.SUPPORTS_AWG:
+                msg += (" · обфускация AmneziaWG движком не поддерживается — "
+                        "подключение как обычный WireGuard")
+            self.hint_lbl.configure(text=msg, fg=THEME.accent_dim)
+        except Exception:
+            pass
 
     def _on_vpn_uri_keypress(self, event: "tk.Event") -> Optional[str]:
         """Явный Ctrl+V, независимый от раскладки клавиатуры.
@@ -664,8 +862,8 @@ class App(tk.Tk):
                 pass
 
             mode = str(cfg.get("game_mode", "normal"))
-            mode_name = "гейминг" if mode == "gaming" else "обычный"
-            mode_text = f"режим: {mode_name} · сменить"
+            mode_name = i18n.t("main.mode_gaming") if mode == "gaming" else i18n.t("main.mode_normal")
+            mode_text = i18n.t("main.mode_change", m=mode_name)
             try:
                 self.mode_lbl.configure(text=mode_text)
             except Exception:
@@ -678,15 +876,15 @@ class App(tk.Tk):
             self.dot.set_color(THEME.danger)
             self.hint_lbl.configure(text=self._error_text, fg=THEME.danger_dim)
         elif is_on:
-            self.status_lbl.configure(text="Включено", fg=THEME.text_primary)
+            self.status_lbl.configure(text=i18n.t("main.on"), fg=THEME.text_primary)
             self.dot.set_color(THEME.accent)
             if self.ctl.is_vpn:
                 self.hint_lbl.configure(text="VPN: подключён", fg=THEME.text_muted)
         else:
-            self.status_lbl.configure(text="Отключено", fg=THEME.text_primary)
+            self.status_lbl.configure(text=i18n.t("main.off"), fg=THEME.text_primary)
             self.dot.set_color(THEME.danger)
             if self.ctl.is_vpn:
-                self.hint_lbl.configure(text="VPN: отключён", fg=THEME.text_muted)
+                self.hint_lbl.configure(text=i18n.t("main.off_vpn"), fg=THEME.text_muted)
 
         if self._tray is not None:
             try:
@@ -735,27 +933,95 @@ class App(tk.Tk):
         """Текст уведомления об успешном включении (с указанием режима)."""
         mode = str(self.ctl.cfg.get("game_mode", "normal"))
         mode_ru = "гейминг" if mode == "gaming" else "обычный"
-        return f"Обход включён · режим: {mode_ru}"
+        return i18n.t("main.status_on_mode", m=mode_ru)
 
     def _on_toggle(self, value: bool) -> None:
         self._error_text = None
         self.toggle.set_busy(True)
         self.status_lbl.configure(text="…", fg=THEME.text_secondary)
 
-        def _work():
+        # Pro: перед включением VPN — авто-пинг всех локаций и выбор лучшей
+        if value and self._pro_should_preping():
+            self.status_lbl.configure(text=i18n.t("main.best_server"), fg=THEME.text_secondary)
             try:
-                if value:
-                    self.ctl.start()
-                else:
-                    self.ctl.stop()
+                self.server_list.set_pinging(True)
             except Exception:
-                log.exception("toggle work failed")
-            finally:
-                self.after(0, lambda: self._after_toggle(value))
+                pass
+            threading.Thread(target=self._preping_work, daemon=True,
+                             name="vpn-preping").start()
+            return
 
-        threading.Thread(target=_work, daemon=True, name="toggle-work").start()
+        threading.Thread(target=self._toggle_work, args=(value,),
+                         daemon=True, name="toggle-work").start()
+
+    def _toggle_work(self, value: bool) -> None:
+        try:
+            if value:
+                self.ctl.start()
+            else:
+                self.ctl.stop()
+        except Exception:
+            log.exception("toggle work failed")
+        finally:
+            self.after(0, lambda: self._after_toggle(value))
+
+    # ── Pro: автовыбор лучшего пинга ─────────────────────────────────
+    def _pro_should_preping(self) -> bool:
+        try:
+            return (
+                bool(self.ctl.cfg.get("pro_autoping_enabled", True))
+                and self.ctl.is_vpn
+                and bool(self._vpn_servers)
+            )
+        except Exception:
+            return False
+
+    def _preping_work(self) -> None:
+        """Пинг всех серверов подписки → выбрать лучший → включить VPN."""
+        servers = list(self._vpn_servers)
+        results: Dict[str, int] = {}
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _ping_one(srv: Dict[str, str]) -> None:
+                host = str(srv.get("server", ""))
+                port = srv.get("server_port", 0)
+                try:
+                    ms = singbox_config.ping_server(host, int(port)) if host and port else -1
+                except Exception:
+                    ms = -1
+                results[srv["tag"]] = ms
+                self.after(0, lambda t=srv["tag"], m=ms: self.server_list.set_ping(t, m))
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(_ping_one, servers))
+        except Exception:
+            log.exception("preping failed")
+
+        def _continue() -> None:
+            try:
+                self.server_list.set_pinging(False)
+            except Exception:
+                pass
+            alive = {t: m for t, m in results.items() if m >= 0}
+            if alive:
+                best = min(alive, key=alive.get)
+                try:
+                    self.server_list.set_selected(best)
+                except Exception:
+                    pass
+                self._on_location_selected(best)
+            threading.Thread(target=self._toggle_work, args=(True,),
+                             daemon=True, name="toggle-work").start()
+
+        self.after(0, _continue)
 
     def _after_toggle(self, value: bool) -> None:
+        if value:
+            _h = getattr(self, "_health", None)
+            if _h is not None:
+                _h.request_tick()
+
         self.toggle.set_busy(False)
         self._refresh_status_text()
         # уведомление о результате (ошибку уже показал _on_error)
@@ -792,7 +1058,7 @@ class App(tk.Tk):
             except Exception:
                 log.exception("failed to persist update_skip_until")
         try:
-            notify.send(('Доступно обновление ' + str(info.get('tag', ''))).strip())
+            notify.send((i18n.t('notify.update_available') + ' ' + str(info.get('tag', ''))).strip())
         except Exception:
             pass
         try:
@@ -804,6 +1070,7 @@ class App(tk.Tk):
         was_on = self.ctl.is_on()
         prev_theme = str(self.ctl.cfg.get("theme", "dark"))
         prev_mode = str(self.ctl.cfg.get("game_mode", "normal"))
+        prev_lang = str(self.ctl.cfg.get("language", "auto"))
 
         def _on_save(new_cfg: dict) -> None:
             self.ctl.cfg.update(new_cfg)
@@ -829,6 +1096,11 @@ class App(tk.Tk):
             if new_theme != prev_theme:
                 apply_theme(new_theme)
                 self._rebuild_ui()
+            elif (bool(new_cfg.get("hc_enabled", True)) != (getattr(self, "_health_row", None) is not None)
+                  or str(new_cfg.get("language", "auto")) != prev_lang):
+                # сменили мониторинг или язык — перерисовать UI на новом языке
+                i18n.set_language(str(new_cfg.get("language", "auto")))
+                self._rebuild_ui()
             # режим (обычный/гейминг) применяется при перезапуске zapret ниже
             new_mode = str(new_cfg.get("game_mode", "normal"))
             if was_on:
@@ -839,9 +1111,9 @@ class App(tk.Tk):
                 if was_on and not self._error_text and self.ctl.is_on():
                     if new_mode != prev_mode:
                         mode_ru = "гейминг" if new_mode == "gaming" else "обычный"
-                        notify.send(f"Режим: {mode_ru} · обход перезапущен")
+                        notify.send(i18n.t("notify.mode_changed", m=mode_ru))
                     else:
-                        notify.send("Настройки применены · обход перезапущен")
+                        notify.send(i18n.t("notify.settings_applied"))
             except Exception:
                 log.exception("settings notify failed")
 
@@ -1140,9 +1412,12 @@ class App(tk.Tk):
                 on_quit=lambda: self.after(0, self._quit_app),
                 is_on_provider=lambda: self.ctl.is_on(),
                 cfg_provider=lambda: self.ctl.cfg,
-                on_strategy=lambda s: self.after(0, self._tray_set_strategy, s),
-                on_mode=lambda m: self.after(0, self._tray_set_mode, m),
-                on_dpitest=lambda: self.after(0, self._tray_open_dpitest),
+                on_strategy=(lambda s: self.after(0, self._tray_set_strategy, s))
+                            if sys.platform == "win32" else None,
+                on_mode=(lambda m: self.after(0, self._tray_set_mode, m))
+                        if sys.platform == "win32" else None,
+                on_dpitest=(lambda: self.after(0, self._tray_open_dpitest))
+                           if sys.platform == "win32" else None,
                 on_logs=lambda: self.after(0, self._tray_open_logs),
                 on_settings=lambda: self.after(0, self._tray_open_settings),
             )
@@ -1178,7 +1453,7 @@ class App(tk.Tk):
                 finally:
                     self.after(0, lambda: (
                         self._refresh_status_text(),
-                        notify.send("Стратегия обновлена · обход перезапущен")
+                        notify.send(i18n.t("notify.strategy_updated"))
                         if not self._error_text and self.ctl.is_on() else None,
                     ))
             threading.Thread(target=_restart, daemon=True, name="strategy-restart").start()
@@ -1224,7 +1499,7 @@ class App(tk.Tk):
         self._refresh_status_text()
         try:
             if not self._error_text and self.ctl.is_on():
-                notify.send(f"Режим: {mode_ru} · обход перезапущен")
+                notify.send(i18n.t("notify.mode_changed", m=mode_ru))
         except Exception:
             log.exception("mode notify failed")
 
@@ -1300,6 +1575,14 @@ class App(tk.Tk):
             self.ctl.stop()
         except Exception:
             log.exception("controller stop failed")
+        # Pro-сервисы
+        for _svc in ("_watchdog", "_hotkeys", "_health"):
+            _s = getattr(self, _svc, None)
+            if _s is None or not hasattr(_s, "stop"):
+                try:
+                    _s.stop()
+                except Exception:
+                    pass
         for j in self._after_jobs:
             try:
                 self.after_cancel(j)
@@ -1331,3 +1614,5 @@ class App(tk.Tk):
                 log.exception("iconify fallback failed")
         # иначе — обычный полный выход
         self._quit_app()
+
+

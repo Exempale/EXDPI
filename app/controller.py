@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from typing import Callable, Dict, Optional
 
@@ -23,6 +24,9 @@ class Controller:
         self.securedns = SecureDNSRunner()
         self.singbox = SingboxRunner()
         self._lock = threading.Lock()
+        # сериализует start/stop/restart: пользовательский тумблер и
+        # watchdog не должны перемешивать остановку и запуск процессов
+        self._lifecycle_lock = threading.RLock()
         self._on_state: Optional[Callable[[bool], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
         self._target_on = False
@@ -46,6 +50,13 @@ class Controller:
                 and (not self.cfg.get("securedns_enabled", False) or self.securedns.is_running)
             )
 
+    def is_target_on(self) -> bool:
+        """Хочет ли пользователь держать обход включённым — без учёта
+        живости процессов (в отличие от is_on()). Для watchdog: процесс
+        мог упасть, а намерение осталось."""
+        with self._lock:
+            return self._target_on
+
     def active_strategy(self) -> str:
         """Реальное имя .bat с учётом режима «Авто» (для запуска и статуса)."""
         return resolve_strategy(self.cfg)
@@ -55,6 +66,10 @@ class Controller:
 
     @property
     def is_vpn(self) -> bool:
+        # DPI-обход (winws + WinDivert) существует только на Windows:
+        # на macOS приложение целиком работает в VPN-режиме
+        if sys.platform != "win32":
+            return True
         return str(self.cfg.get("app_mode", "dpi")) == "vpn"
 
     # ── config ────────────────────────────────────────────────────────
@@ -67,77 +82,86 @@ class Controller:
 
     # ── lifecycle ─────────────────────────────────────────────────────
     def start(self) -> None:
-        with self._lock:
-            self._target_on = True
+        with self._lifecycle_lock:
+            with self._lock:
+                self._target_on = True
 
-        try:
-            if self.is_vpn:
-                uri = str(self.cfg.get("vpn_uri", "")).strip()
-                if not uri:
-                    raise RuntimeError(
-                        "VPN-ссылка не задана — вставьте vless://, ss:// "
-                        "или ссылку-подписку (http/https) и выберите сервер"
-                    )
-                self.singbox.start(uri, on_exit=self._singbox_exit,
-                                   options=self.cfg)
-            else:
-                self.proxy.reset_stats()
-                if self.cfg.get("proxy_enabled", True):
-                    self.proxy.start(self.cfg, on_error=self._proxy_error)
-                if self.cfg.get("zapret_enabled", True):
-                    self.zapret.start(
-                        self.active_strategy(),
-                        on_exit=self._zapret_exit,
-                        custom_domains=list(self.cfg.get("custom_domains") or []),
-                        game_mode=str(self.cfg.get("game_mode", "normal")),
-                    )
-                if self.cfg.get("securedns_enabled", False):
-                    self.securedns.start(self.cfg, on_error=self._securedns_error)
-        except Exception as exc:
-            log.exception("start failed")
-            if self._on_error:
-                self._on_error(str(exc))
-            self.stop()
-            return
+            try:
+                if self.is_vpn:
+                    uri = str(self.cfg.get("vpn_uri", "")).strip()
+                    if not uri:
+                        raise RuntimeError(
+                            "VPN-ссылка не задана — вставьте vless://, ss:// "
+                            "или ссылку-подписку (http/https) и выберите сервер"
+                        )
+                    self.singbox.start(uri, on_exit=self._singbox_exit,
+                                       options=self.cfg)
+                else:
+                    self.proxy.reset_stats()
+                    if self.cfg.get("proxy_enabled", True):
+                        self.proxy.start(self.cfg, on_error=self._proxy_error)
+                    if self.cfg.get("zapret_enabled", True):
+                        self.zapret.start(
+                            self.active_strategy(),
+                            on_exit=self._zapret_exit,
+                            custom_domains=list(self.cfg.get("custom_domains") or []),
+                            game_mode=str(self.cfg.get("game_mode", "normal")),
+                        )
+                    if self.cfg.get("securedns_enabled", False):
+                        self.securedns.start(self.cfg, on_error=self._securedns_error)
+            except Exception as exc:
+                log.exception("start failed")
+                if self._on_error:
+                    self._on_error(str(exc))
+                self.stop()
+                return
 
-        if self._on_state:
-            self._on_state(True)
+            if self._on_state:
+                self._on_state(True)
 
     def stop(self) -> None:
-        with self._lock:
-            self._target_on = False
-        try:
-            self.singbox.stop()
-        except Exception:
-            log.exception("singbox stop")
-        try:
-            self.zapret.stop()
-        except Exception:
-            log.exception("zapret stop")
-        try:
-            self.proxy.stop()
-        except Exception:
-            log.exception("proxy stop")
-        try:
-            self.securedns.stop()
-        except Exception:
-            log.exception("securedns stop")
-        if self._on_state:
-            self._on_state(False)
+        with self._lifecycle_lock:
+            with self._lock:
+                self._target_on = False
+            try:
+                self.singbox.stop()
+            except Exception:
+                log.exception("singbox stop")
+            try:
+                self.zapret.stop()
+            except Exception:
+                log.exception("zapret stop")
+            try:
+                self.proxy.stop()
+            except Exception:
+                log.exception("proxy stop")
+            try:
+                self.securedns.stop()
+            except Exception:
+                log.exception("securedns stop")
+            if self._on_state:
+                self._on_state(False)
 
     def restart_with_new_config(self) -> None:
-        was_on = self.is_on() or self._target_on
-        if was_on:
-            self.stop()
-        self.save()
-        if was_on:
-            self.start()
+        with self._lifecycle_lock:
+            was_on = self.is_on() or self._target_on
+            if was_on:
+                self.stop()
+            self.save()
+            if was_on:
+                self.start()
 
     # ── callbacks from runners ────────────────────────────────────────
     def _zapret_exit(self, rc: int) -> None:
         log.info("zapret exited rc=%d", rc)
         if rc != 0 and self._target_on and self._on_error:
-            self._on_error(f"zapret завершился с кодом {rc}")
+            if rc == 1:
+                self._on_error(
+                    "winws не запустился (код 1). Частая причина — запущена "
+                    "вторая копия EXDPI или другой zapret: закройте её и "
+                    "включите обход снова.")
+            else:
+                self._on_error(f"zapret завершился с кодом {rc}")
         if self._target_on and self._on_state:
             self._on_state(self.is_on())
 

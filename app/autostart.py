@@ -11,7 +11,8 @@ UAC-промпт во время входа в систему и просто м
 ``HighestAvailable`` — она стартует приложение уже с правами администратора
 и без всплывающего UAC. Старый ключ Run при этом подчищается (миграция).
 
-На не-Windows платформах все функции — no-op.
+На macOS используется LaunchAgent (~/Library/LaunchAgents), на прочих
+не-Windows платформах функции — no-op.
 """
 from __future__ import annotations
 
@@ -34,6 +35,49 @@ _RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _VALUE_NAME = "EXDPI"
 
 _CREATE_NO_WINDOW = 0x08000000
+
+
+_PLIST_LABEL = "com.exempale.exdpi"
+
+
+def _darwin_apply(enable: bool) -> None:
+    """macOS: LaunchAgent в ~/Library/LaunchAgents (запуск при входе)."""
+    agents = Path.home() / "Library" / "LaunchAgents"
+    plist = agents / f"{_PLIST_LABEL}.plist"
+    try:
+        if not enable:
+            if plist.exists():
+                subprocess.run(["launchctl", "unload", str(plist)],
+                               capture_output=True, timeout=10)
+                plist.unlink(missing_ok=True)
+            return
+        exe = _exe_path()
+        if not exe:
+            return
+        agents.mkdir(parents=True, exist_ok=True)
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+            '<plist version="1.0">',
+            '<dict>',
+            '  <key>Label</key>',
+            f'  <string>{_PLIST_LABEL}</string>',
+            '  <key>ProgramArguments</key>',
+            '  <array>',
+            f'    <string>{_xml_escape(exe)}</string>',
+            '  </array>',
+            '  <key>RunAtLoad</key>',
+            '  <true/>',
+            '</dict>',
+            '</plist>',
+            '',
+        ]
+        plist.write_text("\n".join(lines), encoding="utf-8")
+        subprocess.run(["launchctl", "load", str(plist)],
+                       capture_output=True, timeout=10)
+    except Exception:
+        log.exception("darwin autostart failed")
 
 
 def _exe_path() -> Optional[str]:
@@ -263,6 +307,9 @@ def apply(want_enabled: bool) -> None:
     При включении задача всегда пересоздаётся — так путь к .exe остаётся
     актуальным, даже если пользователь переместил программу.
     """
+    if sys.platform == "darwin":
+        _darwin_apply(want_enabled)
+        return
     if sys.platform != "win32":
         return
     try:

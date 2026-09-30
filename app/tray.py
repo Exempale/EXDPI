@@ -27,7 +27,9 @@ from typing import Callable, Dict, List, Optional
 log = logging.getLogger("dpibypass.tray")
 
 
-_MODE_LABELS = (("normal", "Обычный"), ("gaming", "Гейминг"))
+from .i18n import t as _t
+
+_MODE_LABELS = (("normal", None), ("gaming", None))  # подписи через _t
 
 
 class TrayController:
@@ -165,22 +167,22 @@ class TrayController:
                 cfg = self._cfg()
                 strategy = str(cfg.get("zapret_strategy", "") or "")
                 if strategy.lower() == "auto":
-                    short = "Авто"
+                    short = _t("tray.auto")
                     auto = str(cfg.get("zapret_strategy_auto_result", "") or "")
                     if auto:
-                        short = f"Авто · {self._strategy_short(auto)}"
+                        short = f"{_t('tray.auto')} · {self._strategy_short(auto)}"
                 else:
                     short = self._strategy_short(strategy)
-                state = "включён" if on else "выключен"
-                return f"Обход {state} · {short}" if short else f"Обход {state}"
+                base = _t("tray.status_on") if on else _t("tray.status_off")
+                return f"{base} · {short}"
             except Exception:
                 return "EXDPI"
 
         def _toggle_label(_item) -> str:
             try:
-                return "Выключить" if self._is_on() else "Включить"
+                return _t("tray.toggle_on") if self._is_on() else _t("tray.toggle_off")
             except Exception:
-                return "Переключить"
+                return _t("tray.toggle_default")
 
         def _safe(cb: Optional[Callable], *args) -> None:
             if cb is None:
@@ -199,14 +201,16 @@ class TrayController:
             def _make(strategy_id: str, label: str):
                 return MenuItem(
                     label,
-                    lambda _i, _it, s=strategy_id: _safe(self._on_strategy, s),
+                    # pystray принимает колбэки с 0 или 2 аргументами:
+                    # лямбда с тремя (даже с дефолтом) роняет весь трей
+                    lambda s=strategy_id: _safe(self._on_strategy, s),
                     checked=lambda _it, s=strategy_id: (
                         str(self._cfg().get("zapret_strategy", "")) == s
                     ),
                     radio=True,
                 )
 
-            items.append(_make("auto", "Авто (подбор лучшей)"))
+            items.append(_make("auto", _t("tray.auto_full")))
             try:
                 from .zapret_runner import list_strategies
                 strategies = list_strategies()
@@ -218,10 +222,10 @@ class TrayController:
 
         def _mode_items() -> List:
             items: List = []
-            for mode_id, label in _MODE_LABELS:
+            for mode_id, _label in _MODE_LABELS:
                 items.append(MenuItem(
-                    label,
-                    lambda _i, _it, m=mode_id: _safe(self._on_mode, m),
+                    _t("tray.mode_gaming" if mode_id == "gaming" else "tray.mode_normal"),
+                    lambda m=mode_id: _safe(self._on_mode, m),
                     checked=lambda _it, m=mode_id: (
                         str(self._cfg().get("game_mode", "normal")) == m
                     ),
@@ -232,20 +236,20 @@ class TrayController:
         parts: List = [
             MenuItem(_status_label, None, enabled=False),
             Menu.SEPARATOR,
-            MenuItem("Открыть EXDPI", lambda _i, _it: _safe(self._on_show), default=True),
+            MenuItem(_t("tray.open"), lambda _i, _it: _safe(self._on_show), default=True),
             MenuItem(_toggle_label, lambda _i, _it: _safe(self._on_toggle)),
         ]
         if self._on_strategy is not None:
-            parts.append(MenuItem("Стратегия", Menu(*_strategy_items())))
+            parts.append(MenuItem(_t("tray.strategy"), Menu(*_strategy_items())))
         if self._on_mode is not None:
-            parts.append(MenuItem("Режим", Menu(*_mode_items())))
+            parts.append(MenuItem(_t("tray.mode"), Menu(*_mode_items())))
         extra: List = []
         if self._on_dpitest is not None:
-            extra.append(MenuItem("Проверить обход", lambda _i, _it: _safe(self._on_dpitest)))
+            extra.append(MenuItem(_t("tray.dpitest"), lambda _i, _it: _safe(self._on_dpitest)))
         if self._on_logs is not None:
-            extra.append(MenuItem("Папка с логами", lambda _i, _it: _safe(self._on_logs)))
+            extra.append(MenuItem(_t("tray.logs"), lambda _i, _it: _safe(self._on_logs)))
         if self._on_settings is not None:
-            extra.append(MenuItem("Настройки", lambda _i, _it: _safe(self._on_settings)))
+            extra.append(MenuItem(_t("tray.settings"), lambda _i, _it: _safe(self._on_settings)))
         if extra:
             parts.append(Menu.SEPARATOR)
             parts.extend(extra)
@@ -258,7 +262,7 @@ class TrayController:
             except Exception:
                 pass
 
-        parts.append(MenuItem("Выход", _click_quit))
+        parts.append(MenuItem(_t("tray.quit"), _click_quit))
         return Menu(*parts)
 
     # ── runtime updates ──────────────────────────────────────────────

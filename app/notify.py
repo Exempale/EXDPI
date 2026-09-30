@@ -62,10 +62,34 @@ def send(message: str, title: str = "EXDPI") -> None:
             return
         except Exception:
             log.exception("tray notify failed, falling back")
-    threading.Thread(
-        target=_powershell_toast, args=(title, message),
-        daemon=True, name="notify-toast",
-    ).start()
+    if sys.platform == "darwin":
+        threading.Thread(
+            target=_osascript_notify, args=(title, message),
+            daemon=True, name="notify-toast",
+        ).start()
+    else:
+        threading.Thread(
+            target=_powershell_toast, args=(title, message),
+            daemon=True, name="notify-toast",
+        ).start()
+
+
+def _osascript_notify(title: str, message: str) -> None:
+    """macOS: уведомление через Notification Center (osascript)."""
+    if sys.platform != "darwin":
+        return
+
+    def esc(s: str) -> str:
+        return str(s).replace("\\", "").replace('"', "\u201d")
+
+    script = f'display notification "{esc(message)}" with title "{esc(title)}"'
+    try:
+        subprocess.run(
+            ["osascript", "-e", script],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+        )
+    except Exception:
+        log.exception("osascript notify failed")
 
 
 def _powershell_toast(title: str, message: str) -> None:

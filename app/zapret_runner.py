@@ -83,12 +83,36 @@ def open_service_bat() -> bool:
         return False
 
 
+def strategies_override_dir() -> Path:
+    """Записываемая папка пользовательских/облачных стратегий (Pro).
+
+    В onefile-сборке resources/ извлекается в _MEIPASS, который живёт только
+    до завершения процесса. Чтобы обновлённые облаком .bat-стратегии
+    переживали перезапуски, они пишутся в ``%APPDATA%\\EXDPI\\strategies`` и
+    имеют приоритет над встроенными (см. resolve_strategy_file / list_strategies).
+    """
+    from .config import app_dir
+    return app_dir() / "strategies"
+
+
+def resolve_strategy_file(bat_name: str) -> Path:
+    """Путь к .bat-стратегии: сначала облачная/override-папка, иначе бандл."""
+    ov = strategies_override_dir() / bat_name
+    if ov.is_file():
+        return ov
+    return paths.zapret_root() / bat_name
+
+
 def list_strategies() -> List[str]:
-    """Все доступные стратегии (general*.bat)."""
+    """Все доступные стратегии (general*.bat): встроенные + облачные (Pro)."""
+    names: set = set()
     root = paths.zapret_root()
-    if not root.is_dir():
-        return ["general.bat"]
-    items = sorted(p.name for p in root.glob("general*.bat"))
+    if root.is_dir():
+        names.update(p.name for p in root.glob("general*.bat"))
+    ov = strategies_override_dir()
+    if ov.is_dir():
+        names.update(p.name for p in ov.glob("general*.bat"))
+    items = sorted(names)
     return items or ["general.bat"]
 
 
@@ -104,7 +128,7 @@ def parse_strategy(bat_name: str, game_mode: str = "normal") -> List[str]:
         * "gaming" — GameFilter=1024-65535 для TCP+UDP (Discord-голос,
           игровые лобби, P2P-трафик), как в режиме "all" service.bat.
     """
-    bat_path = paths.zapret_root() / bat_name
+    bat_path = resolve_strategy_file(bat_name)
     if not bat_path.exists():
         raise FileNotFoundError(f"Стратегия не найдена: {bat_name}")
 
@@ -247,6 +271,10 @@ class ZapretRunner:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._strategy: Optional[str] = None
+        # True, пока идёт наш собственный stop(): иначе выход процесса
+        # выглядит в логах как загадочное "exited rc=1", хотя это просто
+        # TerminateProcess (код 1) при рестарте/выключении
+        self.intentional_stop = False
         # последние строки вывода winws.exe — для диагностики rc != 0
         self._out_tail: List[str] = []
         self._tail_lock = threading.Lock()
@@ -318,6 +346,7 @@ class ZapretRunner:
             ).start()
 
             self._strategy = strategy
+            self.intentional_stop = False
 
         if on_exit:
             threading.Thread(
@@ -383,6 +412,13 @@ class ZapretRunner:
                 log.error("winws.exe output (last %d lines):", len(tail))
                 for line in tail:
                     log.error("  %s", line)
+        if getattr(self, "intentional_stop", False):
+            # наш собственный stop() (рестарт/выключение): TerminateProcess
+            # всегда даёт код 1 — в контроллер это не передаём, чтобы не
+            # выглядело как падение в логе и в UI
+            self.intentional_stop = False
+            log.info("zapret stopped intentionally (rc=%s)", rc)
+            return
         try:
             on_exit(rc)
         except Exception:
@@ -398,6 +434,7 @@ class ZapretRunner:
             return
 
         log.info("zapret stop")
+        self.intentional_stop = True
         try:
             proc.terminate()
         except Exception:

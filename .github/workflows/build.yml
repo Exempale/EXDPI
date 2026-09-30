@@ -127,9 +127,9 @@ jobs:
           curl -L -o /tmp/zapret.tar.gz \
             https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.tar.gz
           tar -xzf /tmp/zapret.tar.gz -C /tmp
-          make -C /tmp/zapret-v72.13/nfqws
+          make -C /tmp/zapret-v72.13/nfq
           mkdir -p resources/zapret-linux/bin resources/zapret-linux/strategies resources/zapret-linux/lists
-          cp /tmp/zapret-v72.13/nfqws/nfqws resources/zapret-linux/nfqws
+          cp /tmp/zapret-v72.13/nfq/nfqws resources/zapret-linux/nfqws
           cp resources/zapret/bin/*.bin resources/zapret-linux/bin/
           cp resources/zapret/general*.bat resources/zapret-linux/strategies/
           cp -r resources/zapret/lists/. resources/zapret-linux/lists/

@@ -4,8 +4,9 @@
 
 ### Обход DPI и VPN в одном окне
 
-Обход блокировок (Discord, YouTube, Telegram) и полноценный системный VPN на sing-box
-в одном лёгком GUI под Windows. Оба режима переключаются одной кнопкой.
+DPI-обход на zapret (Discord, YouTube), системный VPN на sing-box и встроенный
+MTProto-прокси для Telegram (текст и голосовые чаты) в одном лёгком GUI.
+Режимы переключаются одной кнопкой.
 
 Работает под Windows, macOS и Linux: DPI-обход и VPN на Windows, на macOS и Linux
 VPN плюс экспериментальный DPI-обход через порты zapret (utunws/nfqws).

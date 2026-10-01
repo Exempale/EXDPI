@@ -16,7 +16,7 @@ from . import GITHUB_RELEASES_URL, GITHUB_REPO, __version__
 from . import APP_INTERNAL_NAME, APP_NAME
 from . import paths
 from .theme import THEME
-from .widgets import IconButton
+from .widgets import safe_grab, IconButton
 
 log = logging.getLogger("dpibypass.updater")
 
@@ -171,7 +171,7 @@ class UpdateDialog(tk.Toplevel):
         self.resizable(False, False)
         self.transient(master)
         try:
-            self.grab_set()
+            safe_grab(self)
         except tk.TclError:
             pass
 

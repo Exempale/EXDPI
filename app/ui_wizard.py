@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 from . import paths, presets
 from .strategy_auto import StrategyScore, run_auto_select_async
 from .theme import THEME, apply_theme, available_themes, label_for as theme_label_for
-from .widgets import bind_paste_by_keycode
+from .widgets import safe_grab, bind_paste_by_keycode
 
 
 log = logging.getLogger("dpibypass.ui_wizard")
@@ -112,7 +112,7 @@ class FirstRunWizard(tk.Toplevel):
         self.resizable(False, False)
         self.transient(master)
         try:
-            self.grab_set()
+            safe_grab(self)
         except tk.TclError:
             pass
         try:

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
+
+from .widgets import safe_grab
 from tkinter import ttk
 from typing import Callable, Dict, Optional
 
@@ -49,7 +51,7 @@ class AutoStrategyDialog(tk.Toplevel):
         self.resizable(False, False)
         self.transient(master)
         try:
-            self.grab_set()
+            safe_grab(self)
         except tk.TclError:
             pass
         try:

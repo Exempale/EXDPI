@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from . import paths
 from .theme import THEME
-from .widgets import IconButton
+from .widgets import safe_grab, IconButton
 
 log = logging.getLogger("dpibypass.ui.tg_guide")
 
@@ -57,7 +57,7 @@ class TgVcGuideDialog(tk.Toplevel):
         self.resizable(True, True)
         self.minsize(440, 460)
         self.transient(master)
-        self.grab_set()
+        safe_grab(self)
 
         try:
             ico = paths.icon_ico()

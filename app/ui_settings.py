@@ -12,7 +12,7 @@ from .i18n import t as _tt
 from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
 from .strategy_auto import AUTO_STRATEGY_ID, AUTO_STRATEGY_LABEL, is_auto
 from .theme import THEME, available_themes, label_for as theme_label_for
-from .widgets import IconButton, bind_clipboard_keys, bind_paste_by_keycode
+from .widgets import safe_grab, IconButton, bind_clipboard_keys, bind_paste_by_keycode
 from .zapret_runner import list_strategies, open_service_bat
 
 
@@ -659,7 +659,7 @@ class SettingsWindow(tk.Toplevel):
         self.resizable(True, True)
         self.minsize(640, 480)
         self.transient(master)
-        self.grab_set()
+        safe_grab(self)
 
         try:
             ico = paths.icon_ico()

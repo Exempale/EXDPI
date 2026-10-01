@@ -33,6 +33,35 @@ def _mix(c1: str, c2: str, t: float) -> str:
     )
 
 
+def safe_grab(win) -> None:
+    """grab_set без падения, если окно ещё не viewable.
+
+    На Windows grab_set переживает неотрисованное окно, а на X11 (Linux)
+    и macOS бросает TclError "grab failed: window not viewable". Если
+    такой вызов стоит в __init__ диалога до построения содержимого,
+    на маке диалог остаётся пустым окном. Повторяем попытку через after,
+    пока окно не появится (до ~6 секунд), ошибки глотаем.
+    """
+    def _try(tries: int) -> None:
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            win.grab_set()
+            return
+        except Exception:
+            pass
+        if tries > 0:
+            try:
+                win.after(120, lambda: _try(tries - 1))
+            except Exception:
+                pass
+
+    _try(50)
+
+
 def bind_clipboard_keys(text: "tk.Text") -> None:
     """Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A в tk.Text по физическому keycode.
 

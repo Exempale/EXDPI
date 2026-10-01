@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
+
+from .widgets import safe_grab
 from typing import Dict, List, Optional
 
 from . import paths
@@ -27,7 +29,7 @@ class DpiTestDialog(tk.Toplevel):
         self.resizable(False, False)
         self.transient(master)
         try:
-            self.grab_set()
+            safe_grab(self)
         except tk.TclError:
             pass
 

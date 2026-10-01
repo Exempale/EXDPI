@@ -12,7 +12,7 @@ from .i18n import t as _tt
 from .config import DEFAULT_CUSTOM_DOMAINS, GAME_MODES, normalize_domain_list, parse_domains
 from .strategy_auto import AUTO_STRATEGY_ID, AUTO_STRATEGY_LABEL, is_auto
 from .theme import THEME, available_themes, label_for as theme_label_for
-from .widgets import safe_grab, IconButton, bind_clipboard_keys, bind_paste_by_keycode
+from .widgets import wheel_delta, safe_grab, IconButton, bind_clipboard_keys, bind_paste_by_keycode
 from .zapret_runner import list_strategies, open_service_bat
 
 
@@ -632,6 +632,16 @@ class _CheckRow(tk.Frame):
         self._cv.create_oval(x, 2, x + 18, 20, fill=knob, outline="")
 
 
+import sys as _sys_mod
+
+_IS_WIN = _sys_mod.platform == "win32"
+_AUTOSTART_DESC = ("Автозапуск при входе в систему через Планировщик заданий — "
+                   "сразу с правами администратора, без запроса UAC." if _IS_WIN else
+                   "Автозапуск при входе в систему через LaunchAgent. Для DPI-обхода "
+                   "запускайте EXDPI через sudo." if _sys_mod.platform == "darwin" else
+                   "Автозапуск при входе в систему через XDG autostart. Для DPI-обхода "
+                   "запускайте EXDPI через sudo.")
+
 class SettingsWindow(tk.Toplevel):
     """Скользящее окно настроек поверх основного."""
 
@@ -774,11 +784,7 @@ class SettingsWindow(tk.Toplevel):
         canvas.bind("<Configure>", _on_canvas_configure)
 
         def _on_wheel(e):
-            try:
-                delta = int(-1 * (e.delta / 120))
-            except Exception:
-                delta = -1 if getattr(e, "num", 0) == 4 else 1
-            canvas.yview_scroll(delta, "units")
+            canvas.yview_scroll(wheel_delta(e), "units")
             return "break"
 
         def _bind_wheel_recursive(widget):
@@ -1171,7 +1177,7 @@ class SettingsWindow(tk.Toplevel):
         self._vpn_strict = _CheckRow(
             body, "Kill-switch (strict route)",
             "Строгая маршрутизация: если туннель упал — трафик НЕ пойдёт мимо "
-            "VPN. Осторожно: на Windows может рубить весь трафик.",
+            "VPN. Осторожно: strict_route может рубить весь трафик.",
             bool(self.cfg.get("vpn_strict_route", False)),
         )
         self._vpn_strict.pack(fill="x", pady=(0, 8))
@@ -1180,16 +1186,15 @@ class SettingsWindow(tk.Toplevel):
     # ── вкладка Общее ────────────────────────────────────────────────
     def _build_gen_tab(self, body) -> None:
         self._autostart = _CheckRow(
-            body, "Запускать с Windows",
-            "Автозапуск при входе в систему через Планировщик заданий — "
-            "сразу с правами администратора, без запроса UAC.",
+            body, "Запускать с Windows" if _IS_WIN else "Запускать при входе в систему",
+            _AUTOSTART_DESC,
             bool(self.cfg.get("autostart_with_windows", False)),
         )
         self._autostart.pack(fill="x", pady=(0, 8))
 
         self._start_enabled = _CheckRow(
             body, "Включать обход при запуске",
-            "При старте EXDPI (в том числе автозапуске с Windows) обход "
+            "При старте EXDPI (в том числе при автозапуске) обход "
             "включается сам — система загрузилась, обход уже работает.",
             bool(self.cfg.get("start_enabled", False)),
         )

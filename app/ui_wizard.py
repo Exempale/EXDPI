@@ -16,6 +16,8 @@
 """
 from __future__ import annotations
 
+import sys
+
 import logging
 import tkinter as tk
 from typing import Any, Callable, Dict, List, Optional
@@ -25,6 +27,16 @@ from .strategy_auto import StrategyScore, run_auto_select_async
 from .theme import THEME, apply_theme, available_themes, label_for as theme_label_for
 from .widgets import safe_grab, bind_paste_by_keycode
 
+
+_IS_WIN = sys.platform == "win32"
+_AUTOSTART_TITLE = "Запускать с Windows" if _IS_WIN else "Запускать при входе в систему"
+_AUTOSTART_DESC = ("EXDPI стартует вместе с системой (Планировщик заданий, "
+                   "сразу с правами администратора)." if _IS_WIN else
+                   "EXDPI стартует вместе с системой (LaunchAgent). Для DPI-обхода "
+                   "запускайте через sudo." if sys.platform == "darwin" else
+                   "EXDPI стартует вместе с системой (XDG autostart). Для DPI-обхода "
+                   "запускайте через sudo.")
+_DPI_ENGINE = "(zapret/WinDivert)" if _IS_WIN else     "(zapret/utunws)" if sys.platform == "darwin" else "(zapret/nfqws)"
 
 log = logging.getLogger("dpibypass.ui_wizard")
 
@@ -468,7 +480,7 @@ class FirstRunWizard(tk.Toplevel):
         options = (
             ("dpi", "Обход DPI",
              "Разблокировка сайтов и сервисов через обход блокировок провайдера "
-             "(zapret/WinDivert). Не шифрует весь трафик."),
+             + _DPI_ENGINE + ". Не шифрует весь трафик."),
             ("vpn", "VPN",
              "Полноценный VPN-туннель через sing-box: по ссылке-подписке или "
              "прямому VLESS/SS/VMess/Trojan/Hysteria2/TUIC."),
@@ -686,11 +698,11 @@ class FirstRunWizard(tk.Toplevel):
 
         self._opt_toggles: Dict[str, _MiniToggle] = {}
         options = (
-            ("autostart_with_windows", "Запускать с Windows",
+            ("autostart_with_windows", _AUTOSTART_TITLE,
              "EXDPI стартует вместе с системой (HKCU\\…\\Run)."),
             ("minimize_to_tray", "Сворачивать в трей",
              "По крестику окно прячется в трей, обход продолжает работать."),
-            ("notifications_enabled", "Уведомления Windows",
+            ("notifications_enabled", "Уведомления системы",
              "Тосты о включении/выключении обхода и ошибках."),
             ("securedns_enabled", "Защищённый DNS (DoH)",
              "Локальный DNS-резолвер: запросы шифруются до Cloudflare, "

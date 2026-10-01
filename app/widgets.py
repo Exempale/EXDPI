@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, Optional
@@ -31,6 +32,39 @@ def _mix(c1: str, c2: str, t: float) -> str:
         int(round(_lerp(g1, g2, t))),
         int(round(_lerp(b1, b2, t))),
     )
+
+
+def wheel_delta(e) -> int:
+    """Сдвиг скролла в строках для события колеса на любой платформе.
+
+    Windows: e.delta кратен 120. macOS: e.delta мал (1-10). Linux/X11:
+    колесо приходит как Button-4/5, а e.delta всегда 0 — поэтому старый
+    код int(-1 * (e.delta / 120)) давал ноль и скролл умирал везде,
+    кроме Windows.
+    """
+    num = getattr(e, "num", 0) or 0
+    if num in (4, 5):
+        return -1 if num == 4 else 1
+    delta = getattr(e, "delta", 0) or 0
+    if sys.platform == "darwin":
+        return -1 if delta > 0 else (1 if delta < 0 else 0)
+    return int(-delta / 120)
+
+
+def bind_wheel_recursive(widget, handler) -> None:
+    """Повесить обработчик колеса на виджет и всех потомков.
+
+    События колеса приходят виджету ПОД курсором: биндинг только на
+    canvas/frame не ловит строки списка, нарисованные поверх него.
+    """
+    widget.bind("<MouseWheel>", handler, add="+")
+    widget.bind("<Button-4>", handler, add="+")
+    widget.bind("<Button-5>", handler, add="+")
+    for child in widget.winfo_children():
+        try:
+            bind_wheel_recursive(child, handler)
+        except Exception:
+            pass
 
 
 def safe_grab(win) -> None:
@@ -712,23 +746,34 @@ class ServerListBox(tk.Frame):
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(body_id, width=e.width))
 
         def _on_wheel(e: tk.Event) -> str:
-            try:
-                delta = int(-1 * (e.delta / 120))
-            except Exception:
-                delta = -1 if getattr(e, "num", 0) == 4 else 1
-            canvas.yview_scroll(delta, "units")
+            canvas.yview_scroll(wheel_delta(e), "units")
             return "break"
 
         for w in (canvas, body):
             w.bind("<MouseWheel>", _on_wheel, add="+")
             w.bind("<Button-4>", _on_wheel, add="+")
             w.bind("<Button-5>", _on_wheel, add="+")
+        # для _bind_body_wheel(): строки пересоздаются при каждом set_servers
+        self._wheel_body = body
+        self._wheel_handler = _on_wheel
 
         self._canvas = canvas
         self._body = body
         self._wheel = _on_wheel
 
     # ── публичный API ────────────────────────────────────────────────────
+    def _bind_body_wheel(self) -> None:
+        """Колесо над строками списка: события приходят виджету под
+        курсором, биндинг на canvas/body строки не ловит — вешаем
+        рекурсивно на всё содержимое после каждой перерисовки."""
+        body = getattr(self, "_wheel_body", None)
+        handler = getattr(self, "_wheel_handler", None)
+        if body is not None and handler is not None:
+            try:
+                bind_wheel_recursive(body, handler)
+            except Exception:
+                pass
+
     def set_servers(self, servers: list[dict], selected_tag: str = "") -> None:
         """Перерисовать список. ``servers`` — как из ``singbox_config.list_servers``."""
         self._servers = list(servers)
@@ -740,6 +785,7 @@ class ServerListBox(tk.Frame):
             child.destroy()
         self._rows = {}
         self._pings = {}
+        self._bind_body_wheel()
 
         if not servers:
             tk.Label(

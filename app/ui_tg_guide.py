@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from . import paths
 from .theme import THEME
-from .widgets import safe_grab, IconButton
+from .widgets import wheel_delta, safe_grab, IconButton
 
 log = logging.getLogger("dpibypass.ui.tg_guide")
 
@@ -151,11 +151,7 @@ class TgVcGuideDialog(tk.Toplevel):
         # widget; bind_all + Enter/Leave ломается, когда курсор уходит на
         # дочерний виджет (Tk шлёт <Leave> на Toplevel и привязка снимается).
         def _on_wheel(e: tk.Event) -> int:
-            try:
-                delta = int(-1 * (e.delta / 120))
-            except Exception:
-                delta = -1 if getattr(e, "num", 0) == 4 else 1
-            canvas.yview_scroll(delta, "units")
+            canvas.yview_scroll(wheel_delta(e), "units")
             return "break"
 
         def _bind_wheel_recursive(widget: tk.Misc) -> None:

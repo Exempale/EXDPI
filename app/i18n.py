@@ -107,6 +107,58 @@ def set_language(lang: str) -> None:
     else:
         _LANG = detect_lang()
     log.debug("i18n language: %s", _LANG)
+    ensure_hook()
+
+
+_HOOK_INSTALLED = False
+
+
+def _tr_text(s: str) -> str:
+    """Статический RU-текст → EN по таблице (i18n_en.EN)."""
+    try:
+        from .i18n_en import EN
+    except Exception:
+        return s
+    return EN.get(s, s)
+
+
+def ensure_hook() -> None:
+    """Полный перевод интерфейса на уровне Tk.
+
+    t() покрывает только места, где он расставлен руками. Остальной
+    интерфейс (настройки, мастер, диалоги) создаёт надписи напрямую,
+    поэтому перехватываем Misc._options — единую точку, через которую
+    проходят и создание виджета, и configure(). Для text= подставляем
+    английский вариант из таблицы, если язык EN. Русский интерфейс
+    не меняется вообще (хук пропускает всё при _LANG != "en").
+    """
+    global _HOOK_INSTALLED
+    if _HOOK_INSTALLED:
+        return
+    _HOOK_INSTALLED = True
+    try:
+        import tkinter as tk
+    except Exception:
+        return
+    if getattr(tk.Misc, "_exdpi_i18n_patched", False):
+        return
+
+    orig_options = tk.Misc._options
+
+    def _options(self, cnf=None, kw=None):
+        try:
+            if _LANG == "en" and (cnf or kw):
+                cnf = dict(cnf) if cnf else None
+                kw = dict(kw) if kw else None
+                for d in (cnf, kw):
+                    if d and "text" in d and isinstance(d["text"], str):
+                        d["text"] = _tr_text(d["text"])
+        except Exception:
+            pass
+        return orig_options(self, cnf, kw)
+
+    tk.Misc._options = _options
+    tk.Misc._exdpi_i18n_patched = True
 
 
 def current_lang() -> str:

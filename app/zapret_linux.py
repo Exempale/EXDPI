@@ -100,7 +100,9 @@ class NfqwsRunner:
         if not bat.exists():
             raise FileNotFoundError(f"Стратегия не найдена: {bat_name}")
         text = bat.read_text(encoding="utf-8", errors="replace")
-        m = re.search(r"winws\.exe\s+(?P<args>.*)", text, flags=re.S)
+        # тот же регекс, что и в Windows-парсере: start "..." /min "%BIN%winws.exe" ...
+        from .zapret_runner import _START_RE
+        m = _START_RE.search(text)
         if not m:
             raise RuntimeError(f"Не удалось распарсить стратегию: {bat_name}")
         args_text = m.group("args")

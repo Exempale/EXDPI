@@ -699,7 +699,7 @@ class FirstRunWizard(tk.Toplevel):
         self._opt_toggles: Dict[str, _MiniToggle] = {}
         options = (
             ("autostart_with_windows", _AUTOSTART_TITLE,
-             "EXDPI стартует вместе с системой (HKCU\\…\\Run)."),
+             _AUTOSTART_DESC),
             ("minimize_to_tray", "Сворачивать в трей",
              "По крестику окно прячется в трей, обход продолжает работать."),
             ("notifications_enabled", "Уведомления системы",

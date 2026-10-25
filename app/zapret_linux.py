@@ -144,14 +144,34 @@ class NfqwsRunner:
                     "-j", "NFQUEUE", "--queue-num", str(QUEUE_NUM),
                     "--queue-bypass"],
         ]
+        errors: List[str] = []
         for rule in rules:
-            if _sh(rule):
-                self._applied_rules.append(rule)
-                log.info("iptables: %s", " ".join(rule[3:]))
+            res = _sh(rule)
+            if res is None or res.returncode != 0:
+                # правило не встало: без него nfqws часть трафика не увидит,
+                # молча продолжать нельзя (статус «включено», а обхода нет)
+                err = (res.stderr or res.stdout or "timeout").strip()[-200:] if res else "timeout"
+                errors.append(f"iptables: {err}")
+                log.error("iptables rule failed: %s | %s", " ".join(rule), err)
+                continue
+            self._applied_rules.append(rule)
+            log.info("iptables: %s", " ".join(rule[3:]))
+        if errors:
+            if not self._applied_rules:
+                hint = ""
+                if any("not found" in e or "command" in e.lower() for e in errors):
+                    hint = " (пакет iptables не установлен?)"
+                raise RuntimeError(
+                    "Не удалось добавить правила iptables" + hint + ": "
+                    + errors[0])
+            # одно из двух правил встало — работаем, но предупреждаем
+            log.warning("частично применённые правила: %s", errors)
 
     def _remove_rules(self) -> None:
         for rule in reversed(self._applied_rules):
-            _sh(["iptables", "-t", "mangle", "-D"] + rule[6:])
+            # правило: iptables -t mangle -I POSTROUTING -o iface …
+            # удаление: те же аргументы после замены -I на -D
+            _sh(["iptables", "-t", "mangle", "-D"] + rule[4:])
         self._applied_rules = []
 
     # ── lifecycle ────────────────────────────────────────────────────

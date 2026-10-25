@@ -1,5 +1,5 @@
 @echo off
-set "LOCAL_VERSION=1.9.8c"
+set "LOCAL_VERSION=1.10.4"
 
 :: External commands
 if "%~1"=="status_zapret" (
@@ -53,8 +53,11 @@ if "%1"=="admin" (
 
 :: MENU ================================
 setlocal EnableDelayedExpansion
+title ZAPRET SERVICE MANAGER v!LOCAL_VERSION!
 :menu
+
 cls
+
 call :ipset_switch_status
 call :game_switch_status
 call :check_updates_switch_status
@@ -76,21 +79,22 @@ echo   :: SETTINGS
 echo      4. Game Filter         [!GameFilterStatus!]
 echo      5. IPSet Filter        [!IPsetStatus!]
 echo      6. Auto-Update Check   [!CheckUpdatesStatus!]
+echo      7. Replace active fakes
 echo.
 echo   :: UPDATES
-echo      7. Update IPSet List
-echo      8. Update Hosts File
-echo      9. Check for Updates
+echo      8. Update IPSet List
+echo      9. Update Hosts File
+echo      10. Check for Updates
 echo.
 echo   :: TOOLS
-echo      10. Run Diagnostics
-echo      11. Run Tests
+echo      11. Run Diagnostics
+echo      12. Run Tests
 echo.
 echo   ----------------------------------------
 echo      0. Exit
 echo.
 
-set /p menu_choice=   Select option (0-11): 
+set /p menu_choice=   Select option (0-12): 
 
 if "%menu_choice%"=="1" goto service_install
 if "%menu_choice%"=="2" goto service_remove
@@ -98,11 +102,12 @@ if "%menu_choice%"=="3" goto service_status
 if "%menu_choice%"=="4" goto game_switch
 if "%menu_choice%"=="5" goto ipset_switch
 if "%menu_choice%"=="6" goto check_updates_switch
-if "%menu_choice%"=="7" goto ipset_update
-if "%menu_choice%"=="8" goto hosts_update
-if "%menu_choice%"=="9" goto service_check_updates
-if "%menu_choice%"=="10" goto service_diagnostics
-if "%menu_choice%"=="11" goto run_tests
+if "%menu_choice%"=="7" goto replace_active_fakes
+if "%menu_choice%"=="8" goto ipset_update
+if "%menu_choice%"=="9" goto hosts_update
+if "%menu_choice%"=="10" goto service_check_updates
+if "%menu_choice%"=="11" goto service_diagnostics
+if "%menu_choice%"=="12" goto run_tests
 if "%menu_choice%"=="0" exit /b
 goto menu
 
@@ -115,7 +120,8 @@ if not exist "%LISTS_PATH%ipset-exclude-user.txt" (
     echo 203.0.113.113/32>"%LISTS_PATH%ipset-exclude-user.txt"
 )
 if not exist "%LISTS_PATH%list-general-user.txt" (
-    echo domain.example.abc>"%LISTS_PATH%list-general-user.txt"
+    echo # Never leave this file empty>"%LISTS_PATH%list-general-user.txt"
+    echo domain.example.abc>>"%LISTS_PATH%list-general-user.txt"
 )
 if not exist "%LISTS_PATH%list-exclude-user.txt" (
     echo domain.example.abc>"%LISTS_PATH%list-exclude-user.txt"
@@ -234,16 +240,22 @@ echo Pick one of the options:
 set "count=0"
 for /f "delims=" %%F in ('powershell -NoProfile -Command "Get-ChildItem -LiteralPath '.' -Filter '*.bat' | Where-Object { $_.Name -notlike 'service*' } | Sort-Object { [Regex]::Replace($_.Name, '(\d+)', { $args[0].Value.PadLeft(8, '0') }) } | ForEach-Object { $_.Name }"') do (
     set /a count+=1
-    echo !count!. %%F
+    echo   !count!. %%F
     set "file!count!=%%F"
 )
 
+echo   0. Exit
+
+echo.
+
 :: Choosing file
 set "choice="
-set /p "choice=Input file index (number): "
+set /p "choice=Input option (0-!count!, default: 0): "
 if "!choice!"=="" (
-    echo The choice is empty, exiting...
-    pause
+    set "choice=0"
+)
+
+if "!choice!"=="0" (
     goto menu
 )
 
@@ -261,27 +273,30 @@ set "args_with_value=sni host altorder"
 set "args="
 set "capture=0"
 set "mergeargs=0"
+set "BIN=%~dp0bin\"
+set "LISTS=%~dp0lists\"
 set QUOTE="
 
 for /f "tokens=*" %%a in ('type "!selectedFile!"') do (
     set "line=%%a"
     call set "line=%%line:^!=EXCL_MARK%%"
+    call set "line=!line!"
 
-    echo !line! | findstr /i "%BIN%winws.exe" >nul
+    echo !line! | findstr /i "winws.exe" >nul
     if not errorlevel 1 (
         set "capture=1"
     )
 
     if !capture!==1 (
         if not defined args (
-            set "line=!line:*%BIN%winws.exe"=!"
+            set "line=!line:*winws.exe"=!"
         )
 
         set "temp_args="
         for %%i in (!line!) do (
             set "arg=%%i"
 
-            if not "!arg!"=="^" (
+            if not "!arg!"=="^" if not "!arg!"=="^^" (
                 if "!arg:~0,2!" EQU "--" if not !mergeargs!==0 (
                     set "mergeargs=0"
                 )
@@ -294,19 +309,9 @@ for /f "tokens=*" %%a in ('type "!selectedFile!"') do (
                         set "arg=\!QUOTE!!arg!\!QUOTE!"
                     ) else if "!arg:~0,1!"=="@" (
                         set "arg=\!QUOTE!@%~dp0!arg:~1!\!QUOTE!"
-                    ) else if "!arg:~0,5!"=="%%BIN%%" (
-                        set "arg=\!QUOTE!!BIN_PATH!!arg:~5!\!QUOTE!"
-                    ) else if "!arg:~0,7!"=="%%LISTS%%" (
-                        set "arg=\!QUOTE!!LISTS_PATH!!arg:~7!\!QUOTE!"
                     ) else (
                         set "arg=\!QUOTE!%~dp0!arg!\!QUOTE!"
                     )
-                ) else if "!arg:~0,12!" EQU "%%GameFilter%%" (
-                    set "arg=%GameFilter%"
-                ) else if "!arg:~0,15!" EQU "%%GameFilterTCP%%" (
-                    set "arg=%GameFilterTCP%"
-                ) else if "!arg:~0,15!" EQU "%%GameFilterUDP%%" (
-                    set "arg=%GameFilterUDP%"
                 )
 
                 if !mergeargs!==1 (
@@ -407,6 +412,10 @@ goto menu
 :service_diagnostics
 chcp 437 > nul
 cls
+
+:: Zapret path
+call :PrintGreen "Zapret is installed in: '%~dp0'"
+echo:
 
 :: Base Filtering Engine
 sc query BFE | findstr /I "RUNNING" > nul
@@ -512,6 +521,30 @@ if !errorlevel!==0 (
 )
 echo:
 
+:: Cyrillic path
+powershell -NoProfile -Command "if ('%~dp0' -match '[\u0430-\u044F\u0410-\u042F\u0451\u0401]') { exit 0 } else { exit 1 }"
+if !errorlevel!==0 (
+    call :PrintYellow "[?] The path where Zapret is installed contains Cyrillic characters"
+    call :PrintYellow "If bypass doesn't work, try to move Zapret to another directory, for example in C:\zapret"
+) else (
+    call :PrintGreen "Cyrillic path check passed"
+)
+echo:
+
+:: OneDrive
+if defined OneDrive (
+    echo %~dp0\ | findstr /I /C:"%OneDrive%\\" > nul
+    if !errorlevel!==0 (
+        call :PrintRed "[X] Zapret is installed in a OneDrive folder"
+        call :PrintRed "If bypass doesn't work, try to move Zapret to another directory, for example in C:\zapret"
+    ) else (
+        call :PrintGreen "OneDrive check passed"
+    )
+) else (
+    call :PrintGreen "OneDrive check passed"
+)
+echo:
+
 :: WinDivert64.sys file
 set "BIN_PATH=%~dp0bin\"
 if not exist "%BIN_PATH%\*.sys" (
@@ -521,9 +554,9 @@ if not exist "%BIN_PATH%\*.sys" (
 
 :: VPN
 set "VPN_SERVICES="
-sc query | findstr /I "VPN" > nul
+sc query | findstr /I "VPN HappService" > nul
 if !errorlevel!==0 (
-    for /f "tokens=2 delims=:" %%A in ('sc query ^| findstr /I "VPN"') do (
+    for /f "tokens=2 delims=:" %%A in ('sc query ^| findstr /I "VPN HappService"') do (
         if not defined VPN_SERVICES (
             set "VPN_SERVICES=!VPN_SERVICES!%%A"
         ) else (
@@ -666,37 +699,30 @@ if !found_any_conflict!==1 (
 
 :: Discord cache clearing
 set "CHOICE="
-set /p "CHOICE=Do you want to clear the Discord cache? (Y/N) (default: Y)  "
+set /p "CHOICE=Do you want to clear the Discord cache (Stable, PTB, Canary, Development)? (Y/N) (default: Y) "
 if "!CHOICE!"=="" set "CHOICE=Y"
 if "!CHOICE!"=="y" set "CHOICE=Y"
 
 if /i "!CHOICE!"=="Y" (
-    tasklist /FI "IMAGENAME eq Discord.exe" | findstr /I "Discord.exe" > nul
-    if !errorlevel!==0 (
-        echo Discord is running, closing...
-        taskkill /IM Discord.exe /F > nul
-        if !errorlevel! == 0 (
-            call :PrintGreen "Discord was successfully closed"
-        ) else (
-            call :PrintRed "Unable to close Discord"
-        )
+    set "discordFound=0"
+    if exist "%APPDATA%\discord\" (
+        set "discordFound=1"
+        call :clear_discord_cache "Discord.exe" "Discord" "%APPDATA%\discord"
     )
-
-    set "discordCacheDir=%appdata%\discord"
-
-    for %%d in ("Cache" "Code Cache" "GPUCache") do (
-        set "dirPath=!discordCacheDir!\%%~d"
-        if exist "!dirPath!" (
-            rd /s /q "!dirPath!"
-            if !errorlevel!==0 (
-                call :PrintGreen "Successfully deleted !dirPath!"
-            ) else (
-                call :PrintRed "Failed to delete !dirPath!"
-            )
-        ) else (
-            call :PrintRed "!dirPath! does not exist"
-        )
+    if exist "%APPDATA%\discordptb\" (
+        set "discordFound=1"
+        call :clear_discord_cache "DiscordPTB.exe" "Discord PTB" "%APPDATA%\discordptb"
     )
+    if exist "%APPDATA%\discordcanary\" (
+        set "discordFound=1"
+        call :clear_discord_cache "DiscordCanary.exe" "Discord Canary" "%APPDATA%\discordcanary"
+    )
+    if exist "%APPDATA%\discorddevelopment\" (
+        set "discordFound=1"
+        call :clear_discord_cache "DiscordDevelopment.exe" "Discord Development" "%APPDATA%\discorddevelopment"
+    )
+    if !discordFound! equ 0 call :PrintRed "Discord installations were not found"
+    set "discordFound="
 )
 echo:
 
@@ -709,35 +735,51 @@ goto menu
 chcp 437 > nul
 
 set "gameFlagFile=%~dp0utils\game_filter.enabled"
+set "GameFilterMode=disabled"
+set "GameFilterTCPRange=1024-65535"
+set "GameFilterUDPRange=1024-65535"
+set "GameFilterStatus=disabled"
+set "GameFilter=12"
+set "GameFilterTCP=12"
+set "GameFilterUDP=12"
 
-if not exist "%gameFlagFile%" (
-    set "GameFilterStatus=disabled"
-    set "GameFilter=12"
-    set "GameFilterTCP=12"
-    set "GameFilterUDP=12"
-    exit /b
+if not exist "%gameFlagFile%" exit /b
+
+set "GameFilterTCPCandidate="
+set "GameFilterUDPCandidate="
+for /f "usebackq tokens=1,* delims==" %%A in ("%gameFlagFile%") do (
+    if /i "%%A"=="mode" set "GameFilterMode=%%B"
+    if /i "%%A"=="all" set "GameFilterMode=all"
+    if /i "%%A"=="udp" (
+        if "%%B"=="" (set "GameFilterMode=udp") else set "GameFilterUDPCandidate=%%B"
+    )
+    if /i "%%A"=="tcp" (
+        if "%%B"=="" (set "GameFilterMode=tcp") else set "GameFilterTCPCandidate=%%B"
+    )
 )
 
-set "GameFilterMode="
-for /f "usebackq delims=" %%A in ("%gameFlagFile%") do (
-    if not defined GameFilterMode set "GameFilterMode=%%A"
-)
+call :validate_game_filter_range "%GameFilterTCPCandidate%"
+if defined ValidatedGameFilterRange set "GameFilterTCPRange=%ValidatedGameFilterRange%"
+call :validate_game_filter_range "%GameFilterUDPCandidate%"
+if defined ValidatedGameFilterRange set "GameFilterUDPRange=%ValidatedGameFilterRange%"
 
 if /i "%GameFilterMode%"=="all" (
     set "GameFilterStatus=enabled (TCP and UDP)"
-    set "GameFilter=1024-65535"
-    set "GameFilterTCP=1024-65535"
-    set "GameFilterUDP=1024-65535"
+    set "GameFilter=%GameFilterTCPRange%"
+    set "GameFilterTCP=%GameFilterTCPRange%"
+    set "GameFilterUDP=%GameFilterUDPRange%"
 ) else if /i "%GameFilterMode%"=="tcp" (
     set "GameFilterStatus=enabled (TCP)"
-    set "GameFilter=1024-65535"
-    set "GameFilterTCP=1024-65535"
+    set "GameFilter=%GameFilterTCPRange%"
+    set "GameFilterTCP=%GameFilterTCPRange%"
     set "GameFilterUDP=12"
-) else (
+) else if /i "%GameFilterMode%"=="udp" (
     set "GameFilterStatus=enabled (UDP)"
-    set "GameFilter=1024-65535"
+    set "GameFilter=%GameFilterUDPRange%"
     set "GameFilterTCP=12"
-    set "GameFilterUDP=1024-65535"
+    set "GameFilterUDP=%GameFilterUDPRange%"
+) else (
+    set "GameFilterMode=disabled"
 )
 exit /b
 
@@ -745,38 +787,115 @@ exit /b
 :game_switch
 chcp 437 > nul
 cls
+call :game_switch_status
 
-echo Select game filter mode:
-echo   0. Disable
-echo   1. TCP and UDP
-echo   2. TCP only
-echo   3. UDP only
+echo Select game filter option:
+if "%GameFilterMode%"=="disabled"   (echo   1. * Disable) else      echo   1.   Disable
+if "%GameFilterMode%"=="all"        (echo   2. * TCP and UDP) else  echo   2.   TCP and UDP
+if "%GameFilterMode%"=="tcp"        (echo   3. * TCP) else          echo   3.   TCP
+if "%GameFilterMode%"=="udp"        (echo   4. * UDP) else          echo   4.   UDP
+echo.
+echo   5. Change TCP port range (current: %GameFilterTCPRange%)
+echo   6. Change UDP port range (current: %GameFilterUDPRange%)
+echo   7. Change TCP and UDP port ranges
+echo.
+echo.  0. Exit
 echo.
 set "GameFilterChoice=0"
-set /p "GameFilterChoice=Select option (0-3, default: 0): "
+set /p "GameFilterChoice=Select option (0-7, default: 0): "
 if "%GameFilterChoice%"=="" set "GameFilterChoice=0"
 
-if "%GameFilterChoice%"=="0" (
-    if exist "%gameFlagFile%" (
-        del /f /q "%gameFlagFile%"
-    ) else (
-        goto menu
-    )
-) else if "%GameFilterChoice%"=="1" (
-    echo all>"%gameFlagFile%"
+if "%GameFilterChoice%"=="1" (
+    set "GameFilterMode=disabled"
 ) else if "%GameFilterChoice%"=="2" (
-    echo tcp>"%gameFlagFile%"
+    set "GameFilterMode=all"
 ) else if "%GameFilterChoice%"=="3" (
-    echo udp>"%gameFlagFile%"
+    set "GameFilterMode=tcp"
+) else if "%GameFilterChoice%"=="4" (
+    set "GameFilterMode=udp"
+) else if "%GameFilterChoice%"=="5" (
+    call :change_game_filter_range tcp
+) else if "%GameFilterChoice%"=="6" (
+    call :change_game_filter_range udp
+) else if "%GameFilterChoice%"=="7" (
+    call :change_game_filter_range all
 ) else (
-    echo Invalid choice, exiting...
-    pause
     goto menu
 )
 
+echo.
+call :save_game_filter_settings
 call :PrintYellow "Restart the zapret to apply the changes"
 pause
-goto menu
+goto game_switch
+
+
+:change_game_filter_range
+set "GameFilterRangeInput="
+
+echo.
+echo Changing ports for %~1 (example: 1024-1934,1936-65535, default: 1024-65535)
+set /p "GameFilterRangeInput=Enter ports/ranges: "
+call :validate_game_filter_range "%GameFilterRangeInput%"
+if not defined ValidatedGameFilterRange (
+    call :PrintRed "Invalid input. Please enter valid ports/ranges."
+    pause
+    goto game_switch
+)
+
+if /i "%~1"=="tcp" set "GameFilterTCPRange=%ValidatedGameFilterRange%"
+if /i "%~1"=="udp" set "GameFilterUDPRange=%ValidatedGameFilterRange%"
+if /i "%~1"=="all" (
+    set "GameFilterTCPRange=%ValidatedGameFilterRange%"
+    set "GameFilterUDPRange=%ValidatedGameFilterRange%"
+)
+exit /b
+
+
+:validate_game_filter_range
+set "ValidatedGameFilterRange="
+setlocal EnableDelayedExpansion
+set "GameFilterRangeToValidate=%~1"
+set "GameFilterRangeToValidate=!GameFilterRangeToValidate: =!"
+if not defined GameFilterRangeToValidate exit /b
+for %%A in ("!GameFilterRangeToValidate:,=" "!") do (
+    call :gf_validate_item "%%~A"
+    if not defined GameFilterRangeItemValid exit /b
+)
+endlocal & set "ValidatedGameFilterRange=%GameFilterRangeToValidate%"
+exit /b
+
+
+:gf_validate_item
+set "GameFilterRangeItemValid="
+setlocal EnableDelayedExpansion
+set "GameFilterRangeItem=%~1"
+
+echo(!GameFilterRangeItem!| findstr /r /x /c:"[1-9][0-9]*" /c:"[1-9][0-9]*-[1-9][0-9]*" > nul || exit /b
+for /f "tokens=1,2 delims=-" %%A in ("!GameFilterRangeItem!") do (
+    set "GameFilterRangeStart=%%A"
+    set "GameFilterRangeEnd=%%B"
+)
+if not defined GameFilterRangeEnd set "GameFilterRangeEnd=!GameFilterRangeStart!"
+
+if not "!GameFilterRangeStart:~5,1!"=="" exit /b
+if not "!GameFilterRangeEnd:~5,1!"=="" exit /b
+set /a GameFilterRangeStartNumber=GameFilterRangeStart, GameFilterRangeEndNumber=GameFilterRangeEnd
+if !GameFilterRangeStartNumber! gtr 65535 exit /b
+if !GameFilterRangeEndNumber! gtr 65535 exit /b
+if !GameFilterRangeStartNumber! gtr !GameFilterRangeEndNumber! exit /b
+
+endlocal & set "GameFilterRangeItemValid=1"
+exit /b
+
+
+:save_game_filter_settings
+>"%gameFlagFile%" (
+    echo mode=%GameFilterMode%
+    echo tcp=%GameFilterTCPRange%
+    echo udp=%GameFilterUDPRange%
+)
+exit /b
 
 
 :: CHECK UPDATES SWITCH =================
@@ -809,6 +928,119 @@ pause
 goto menu
 
 
+:: REPLACE ACTIVE FAKES =================
+:replace_active_fakes
+chcp 437 > nul
+cls
+
+set "BIN_PATH=%~dp0bin\"
+set "fake_count=0"
+set "fake_type="
+set "fake_number="
+set "discord_hash="
+set "game_hash="
+set "current_discord_fake=(not found)"
+set "current_game_fake=(not found)"
+
+if not exist "%BIN_PATH%" (
+    echo Error: bin folder not found.
+    pause
+    goto menu
+)
+
+pushd "%BIN_PATH%"
+for /f "tokens=1,2,3 delims=|" %%A in ('powershell -NoProfile -Command "foreach ($item in @(@{Name='ACTIVE_DISCORD_UDP.bin'; Label='ACTIVE_DISCORD'},@{Name='ACTIVE_GAME_UDP.bin'; Label='ACTIVE_GAME'})) { if (Test-Path -LiteralPath $item.Name) { Write-Output ($item.Label + [char]124 + $item.Label + [char]124 + (Get-FileHash -LiteralPath $item.Name -Algorithm SHA256).Hash) } }; $files = @(Get-ChildItem -LiteralPath . -File -Filter '*.bin'); foreach ($file in $files) { if ($file.BaseName -notlike 'ACTIVE_*') { Write-Output ('FAKE' + [char]124 + $file.BaseName + [char]124 + (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) } }"') do (
+    if "%%A"=="ACTIVE_DISCORD" (
+        set "discord_hash=%%C"
+    ) else if "%%A"=="ACTIVE_GAME" (
+        set "game_hash=%%C"
+    ) else if "%%A"=="FAKE" (
+        set /a fake_count+=1
+        set "fake_file!fake_count!=%BIN_PATH%%%B.bin"
+        set "fake_name!fake_count!=%%B"
+        set "fake_hash!fake_count!=%%C"
+    )
+)
+popd
+
+if !fake_count! EQU 0 (
+    echo No .bin files were found in the bin folder.
+    pause
+    goto menu
+)
+
+for /l %%N in (1,1,!fake_count!) do (
+    if defined discord_hash if /i "!fake_hash%%N!"=="!discord_hash!" set "current_discord_fake=!fake_name%%N!"
+    if defined game_hash if /i "!fake_hash%%N!"=="!game_hash!" set "current_game_fake=!fake_name%%N!"
+)
+
+:replace_active_fakes_prompt
+echo.
+echo Enter the fake type number and the fake file number to replace it with.
+echo Example: 1 4 (replaces Discord UDP with fake file under number 4)
+echo          2 1 (replaces GameFilter UDP with fake file under number 1)
+echo.
+echo Press ENTER or 0 to return.
+echo.
+echo   ----------------------------------------
+echo.
+echo Fake types:
+echo   1. Discord UDP     (current: !current_discord_fake!)
+echo   2. GameFilter UDP  (current: !current_game_fake!)
+echo.
+echo Fake files:
+for /l %%N in (1,1,!fake_count!) do echo   %%N. !fake_name%%N!
+echo.
+
+set "replace_choice="
+set /p "replace_choice=Enter choice: "
+if not defined replace_choice goto menu
+if "!replace_choice!"=="0" goto menu
+
+set "active_file="
+set "fake_type="
+set "fake_number="
+for /f "tokens=1,2" %%A in ("!replace_choice!") do (
+    set "fake_type=%%A"
+    set "fake_number=%%B"
+)
+
+if "!fake_type!"=="1" (
+    set "active_file=%BIN_PATH%ACTIVE_DISCORD_UDP.bin"
+) else if "!fake_type!"=="2" (
+    set "active_file=%BIN_PATH%ACTIVE_GAME_UDP.bin"
+) else (
+    echo Invalid fake type.
+    pause
+    cls
+    goto replace_active_fakes_prompt
+)
+
+set "source_file="
+for /l %%N in (1,1,!fake_count!) do if "%%N"=="!fake_number!" set "source_file=!fake_file%%N!"
+if not defined source_file (
+    echo Invalid fake file number.
+    pause
+    cls
+    goto replace_active_fakes_prompt
+)
+
+del /f /q "!active_file!" >nul 2>&1
+copy /y "!source_file!" "!active_file!" >nul
+if errorlevel 1 (
+    echo Failed to replace the active fake file.
+) else (
+    echo Active fake file replaced successfully.
+    for /l %%N in (1,1,!fake_count!) do if "%%N"=="!fake_number!" (
+        if "!fake_type!"=="1" set "current_discord_fake=!fake_name%%N!"
+        if "!fake_type!"=="2" set "current_game_fake=!fake_name%%N!"
+    )
+)
+pause
+cls
+goto replace_active_fakes_prompt
+
+
 :: IPSET SWITCH =======================
 :ipset_switch_status
 chcp 437 > nul
@@ -819,7 +1051,7 @@ for /f %%i in ('type "%listFile%" 2^>nul ^| find /c /v ""') do set "lineCount=%%
 if !lineCount!==0 (
     set "IPsetStatus=any"
 ) else (
-    findstr /R "^203\.0\.113\.113/32$" "%listFile%" >nul
+    findstr /C:"203.0.113.113/32" "%listFile%" >nul
     if !errorlevel!==0 (
         set "IPsetStatus=none"
     ) else (
@@ -888,9 +1120,9 @@ echo Updating ipset-all...
 if exist "%SystemRoot%\System32\curl.exe" (
     curl --version | find "libcurl/7"
     if !errorlevel!==0 (
-        curl --ssl-no-revoke -L -o "%listFile%" "%url%"
+        curl --ssl-no-revoke -L -f -o "%listFile%" "%url%"
     ) else (
-        curl --ssl-revoke-best-effort -L -o "%listFile%" "%url%"
+        curl --ssl-revoke-best-effort -L -f -o "%listFile%" "%url%"
     )
 ) else (
     powershell -NoProfile -Command ^
@@ -918,18 +1150,20 @@ set "hostsUrl=https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/
 set "tempFile=%TEMP%\zapret_hosts.txt"
 set "needsUpdate=0"
 
+set "cacheBuster=%RANDOM%%RANDOM%%RANDOM%"
+set "requestUrl=%hostsUrl%?t=%cacheBuster%"
+
 echo Checking hosts file...
 
 if exist "%SystemRoot%\System32\curl.exe" (
-    curl -L -s -o "%tempFile%" "%hostsUrl%"
+    curl -L -s -f -o "%tempFile%" "%requestUrl%"
 ) else (
     powershell -NoProfile -Command ^
-        "$url = '%hostsUrl%';" ^
+        "$url = '%requestUrl%';" ^
         "$out = '%tempFile%';" ^
         "$res = Invoke-WebRequest -Uri $url -TimeoutSec 10 -UseBasicParsing;" ^
         "if ($res.StatusCode -eq 200) { $res.Content | Out-File -FilePath $out -Encoding UTF8 } else { exit 1 }"
 )
-
 if not exist "%tempFile%" (
     call :PrintRed "Failed to download hosts file from repository"
     call :PrintYellow "Copy hosts file manually from %hostsUrl%"
@@ -1005,6 +1239,42 @@ exit /b
 
 
 :: Utility functions
+
+:clear_discord_cache
+setlocal EnableDelayedExpansion
+set "discordProcess=%~1"
+set "discordName=%~2"
+set "discordCacheDir=%~3"
+
+tasklist /FI "IMAGENAME eq !discordProcess!" 2>nul | findstr /I /C:"!discordProcess!" >nul
+if !errorlevel! equ 0 (
+    echo !discordName! is running, closing...
+    taskkill /IM "!discordProcess!" /F >nul 2>&1
+    if !errorlevel! equ 0 (
+        call :PrintGreen "!discordName! was successfully closed"
+    ) else (
+        call :PrintRed "Unable to close !discordName!"
+    )
+)
+
+if exist "!discordCacheDir!\" (
+    for %%d in ("Cache" "Code Cache" "GPUCache") do (
+        set "dirPath=!discordCacheDir!\%%~d"
+        if exist "!dirPath!\" (
+            rd /s /q "!dirPath!" >nul 2>&1
+            if exist "!dirPath!\" (
+                call :PrintRed "Failed to delete !dirPath!"
+            ) else (
+                call :PrintGreen "Successfully deleted !dirPath!"
+            )
+        ) else (
+            call :PrintRed "!dirPath! does not exist"
+        )
+    )
+)
+
+endlocal
+exit /b
 
 :PrintGreen
 powershell -NoProfile -Command "Write-Host \"%~1\" -ForegroundColor Green"

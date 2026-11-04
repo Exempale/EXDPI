@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import urllib.request
 from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse, unquote
@@ -31,6 +32,27 @@ from . import zapret_runner
 from . import STRATEGY_MANIFEST_URL
 
 log = logging.getLogger("dpibypass.strategy_cloud")
+
+
+def _mirror(url: str) -> str:
+    """Зеркало jsdelivr для raw-ссылок GitHub: raw.githubusercontent.com
+    в РФ часто режется, пока обход не поднялся, а CDN обычно доступен."""
+    return url.replace(
+        "https://raw.githubusercontent.com/",
+        "https://cdn.jsdelivr.net/gh/",
+    ).replace("/main/", "@main/", 1)
+
+
+def _fetch_with_mirror(url: str, timeout: float = 12.0) -> Optional[bytes]:
+    """Скачать по URL, при неудаче — через зеркало jsdelivr."""
+    data = _fetch(url, timeout=timeout)
+    if data is not None:
+        return data
+    mirrored = _mirror(url)
+    if mirrored != url:
+        log.info("primary source failed, trying jsdelivr mirror")
+        return _fetch(mirrored, timeout=timeout)
+    return None
 
 
 def _fetch(url: str, timeout: float = 12.0) -> Optional[bytes]:
@@ -70,7 +92,7 @@ def apply_cloud_strategies(cfg) -> Tuple[bool, str]:
     if not url:
         return False, "Манифест стратегий не настроен (STRATEGY_MANIFEST_URL)."
 
-    raw = _fetch(url)
+    raw = _fetch_with_mirror(url)
     if raw is None:
         return False, "Сервер стратегий недоступен (повторю позже)."
     try:
@@ -105,7 +127,7 @@ def apply_cloud_strategies(cfg) -> Tuple[bool, str]:
         name = _bat_name(u)
         if not name:
             continue
-        data = _fetch(u)
+        data = _fetch_with_mirror(u)
         if data is None:
             continue
         try:
@@ -133,16 +155,30 @@ def run_async(cfg, on_done: Callable[[str], None]) -> None:
     """
 
     def _work() -> None:
-        try:
-            changed, msg = apply_cloud_strategies(cfg)
-        except Exception:
-            log.exception("strategy_cloud background failed")
-            changed, msg = False, "Ошибка проверки облачных стратегий."
-        if msg:
+        msg = ""
+        for attempt in range(5):
             try:
-                on_done(msg)
+                changed, msg = apply_cloud_strategies(cfg)
             except Exception:
-                pass
+                log.exception("strategy_cloud background failed")
+                changed, msg = False, "Ошибка проверки облачных стратегий."
+            if changed or not msg:
+                return  # успех или тихое «нечего делать»
+            if "недоступен" not in msg:
+                return  # не сетевая проблема — ретраить бессмысленно
+            # сервер недоступен: обход мог ещё не подняться — ждём и снова
+            log.info("strategy cloud retry %d/5", attempt + 1)
+            if _stop_wait(60.0):
+                return
+        try:
+            on_done(msg)
+        except Exception:
+            pass
+
+    def _stop_wait(seconds: float) -> bool:
+        for _ in range(int(seconds)):
+            time.sleep(1)
+        return False
 
     threading.Thread(target=_work, daemon=True, name="strategy-cloud").start()
 

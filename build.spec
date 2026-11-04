@@ -64,6 +64,10 @@ hiddenimports = [
     'h2',
     'hpack',
     'hyperframe',
+    'certifi',
+    'httpx',
+    'httpcore',
+    'anyio',
 ]
 
 # cryptography — нативный _rust.pyd + бинарные зависимости.
@@ -130,6 +134,9 @@ a = Analysis(
         'test',
         'pip',
         'setuptools',
+        # приложение на tkinter — Qt-байндинги не нужны, а их наличие
+        # в окружении сборки валит PyInstaller конфликтом хуков
+        'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
     ],
     noarchive=False,
 )

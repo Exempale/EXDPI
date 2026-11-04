@@ -25,6 +25,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Verify zapret bundle
+        run: python tools/check_bundle.py
+
       - name: Install deps
         run: pip install -r requirements.txt
 

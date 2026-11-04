@@ -61,6 +61,9 @@ hiddenimports = [
     'proxy.stats',
     'proxy.tg_ws_proxy',
     'proxy.utils',
+    'h2',
+    'hpack',
+    'hyperframe',
 ]
 
 # cryptography — нативный _rust.pyd + бинарные зависимости.

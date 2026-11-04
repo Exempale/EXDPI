@@ -4,3 +4,4 @@ Pillow
 pyperclip
 cryptography
 psutil
+h2>=4.1

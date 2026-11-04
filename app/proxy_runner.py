@@ -44,8 +44,7 @@ class ProxyRunner:
         proxy_config.buffer_size = 256 * 1024
         proxy_config.pool_size = 4
         proxy_config.fallback_cfproxy = True
-        proxy_config.fallback_cfproxy_priority = True
-        proxy_config.cfproxy_user_domain = ""
+        # cfproxy-пул доменов движок обновляет сам (cf_h2/h2_transport)
         proxy_config.fake_tls_domain = ""
         proxy_config.proxy_protocol = False
 

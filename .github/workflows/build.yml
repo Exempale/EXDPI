@@ -62,9 +62,9 @@ jobs:
       - name: Fetch sing-box (darwin arm64)
         run: |
           curl -L -o /tmp/singbox.tgz \
-            https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-darwin-arm64.tar.gz
+            https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-darwin-arm64.tar.gz
           tar -xzf /tmp/singbox.tgz -C /tmp
-          cp /tmp/sing-box-1.13.14-darwin-arm64/sing-box resources/singbox/sing-box
+          cp /tmp/sing-box-1.14.4-darwin-arm64/sing-box resources/singbox/sing-box
           chmod +x resources/singbox/sing-box
 
       - name: Fetch zapret engine (macOS, Flowseal ZapretMac)
@@ -120,9 +120,9 @@ jobs:
       - name: Fetch sing-box (linux amd64)
         run: |
           curl -L -o /tmp/singbox.tgz \
-            https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-linux-amd64.tar.gz
+            https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz
           tar -xzf /tmp/singbox.tgz -C /tmp
-          cp /tmp/sing-box-1.13.14-linux-amd64/sing-box resources/singbox/sing-box
+          cp /tmp/sing-box-1.14.4-linux-amd64/sing-box resources/singbox/sing-box
           chmod +x resources/singbox/sing-box
 
       - name: Build nfqws (zapret, bol-van)
